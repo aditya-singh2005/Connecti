@@ -37,3 +37,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Open .gitignore and add these lines:
+echo "/android" >> .gitignore
+echo "/ios" >> .gitignore

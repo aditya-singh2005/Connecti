@@ -8,7 +8,7 @@ import { Platform, AppState } from 'react-native';
 
 const LOCATION_TASK_NAME = 'background-location-task';
 const PROXIMITY_RADIUS_METERS = 1000; // 1km radius
-const LOCATION_UPDATE_INTERVAL = 300000; // 5 minutes
+const LOCATION_UPDATE_INTERVAL = 30000; // 5 minutes
 
 // Configure notification handler
 Notifications.setNotificationHandler({
