@@ -4,9 +4,9 @@ import { supabase } from "../lib/supabase";
 
 export const useNearbyFriends = (location, options = {}) => {
   const {
-    radius = 2000, // 1km default
+    radius = 1000, // 1km default
     autoRefresh = true,
-    refreshInterval = 30000, // 1 minute default
+    refreshInterval = 300000, // 5 minute default
     maxResults = 50
   } = options;
 
