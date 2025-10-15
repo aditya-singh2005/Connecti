@@ -1,4 +1,3 @@
-// app/home/_layout.jsx
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -11,21 +10,17 @@ export default function HomeLayout() {
   const { pendingCount } = useFriendships();
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.auth.signOut();
-            router.replace('/login');
-          }
-        }
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+          router.replace('/login');
+        },
+      },
+    ]);
   };
 
   return (
@@ -47,6 +42,7 @@ export default function HomeLayout() {
         },
       }}
     >
+      {/* 🏠 Home */}
       <Tabs.Screen
         name="HomeScreen"
         options={{
@@ -57,7 +53,8 @@ export default function HomeLayout() {
           headerTitle: 'Connecti - Home',
         }}
       />
-      
+
+      {/* 🔍 Search */}
       <Tabs.Screen
         name="SearchScreen"
         options={{
@@ -68,7 +65,20 @@ export default function HomeLayout() {
           headerTitle: 'Search Friends',
         }}
       />
-      
+
+      {/* 💬 Chat */}
+      <Tabs.Screen
+        name="ChatScreen"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+          ),
+          headerTitle: 'Chat',
+        }}
+      />
+
+      {/* 👤 Profile */}
       <Tabs.Screen
         name="ProfileScreen"
         options={{
@@ -88,30 +98,30 @@ export default function HomeLayout() {
           headerTitle: 'My Profile',
         }}
       />
-      
-      {/* Hide these from tab bar */}
-      <Tabs.Screen 
-        name="FriendsListScreen" 
-        options={{ 
+
+      {/* Hidden Screens */}
+      <Tabs.Screen
+        name="FriendsListScreen"
+        options={{
           href: null,
-          headerShown: false 
-        }} 
+          headerShown: false,
+        }}
       />
-      <Tabs.Screen 
-        name="FriendRequestsScreen" 
-        options={{ 
+      <Tabs.Screen
+        name="FriendRequestsScreen"
+        options={{
           href: null,
-          headerShown: false 
-        }} 
+          headerShown: false,
+        }}
       />
-      <Tabs.Screen 
-        name="ProximitySettingsScreen" 
-        options={{ 
+      <Tabs.Screen
+        name="ProximitySettingsScreen"
+        options={{
           href: null,
           headerTitle: 'Proximity Notifications',
           headerStyle: { backgroundColor: '#1E88E5' },
           headerTintColor: '#fff',
-        }} 
+        }}
       />
     </Tabs>
   );
