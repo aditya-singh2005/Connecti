@@ -1,11 +1,13 @@
 import { Stack } from "expo-router";
 import { AuthProvider } from "../context/AuthProvider";
 import { ThemeProvider } from "../context/ThemeContext";
+import NotificationHandler from "../components/NotificationHandler";
 
 export default function RootLayout() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <NotificationHandler />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="login" />

@@ -15,7 +15,7 @@
     ".expo/types/**/*.ts",
     "**/*.ts",
     "**/*.tsx"
-  ],
+, "supabase/functions/send-chat-notification/index.ts"  ],
   "exclude": [
     "node_modules",
     "babel.config.js",
