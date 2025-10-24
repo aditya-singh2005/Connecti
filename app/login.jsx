@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View, Text, TextInput, Button, Alert, StyleSheet } from "react-native";
-import { supabase } from "../../connecti-app/lib/supabase";
+import { supabase } from "../lib/supabase";
 import { useRouter } from "expo-router";
 
 export default function Login() {

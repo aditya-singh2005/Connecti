@@ -11,7 +11,7 @@ import {
   FlatList,
   Animated
 } from "react-native";
-import { supabase } from "../../connecti-app/lib/supabase";
+import { supabase } from "../lib/supabase";
 import { useRouter } from "expo-router";
 
 // Country codes data
