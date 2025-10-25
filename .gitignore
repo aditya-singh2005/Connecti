@@ -45,4 +45,3 @@ app-example
 # Google Service Account Keys
 *-firebase-adminsdk-*.json
 service-account*.json
-google-services.json
