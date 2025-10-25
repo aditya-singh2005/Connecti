@@ -40,3 +40,9 @@ app-example
 
 /android
 /ios
+
+
+# Google Service Account Keys
+*-firebase-adminsdk-*.json
+service-account*.json
+google-services.json

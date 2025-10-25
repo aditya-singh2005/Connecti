@@ -1,17 +1,21 @@
 // supabase/functions/send-chat-notification/index.ts
-// Deploy: supabase functions deploy send-chat-notification
-
 // @deno-types="npm:@supabase/supabase-js@2"
 import { createClient } from '@supabase/supabase-js';
 
 const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
 
-interface NotificationPayload {
-  message_id: string;
-  sender_id: string;
-  receiver_id: string;
-  content: string;
-  created_at: string;
+interface WebhookPayload {
+  type: string;
+  table: string;
+  record: {
+    id: string;
+    sender_id: string;
+    receiver_id: string;
+    content: string;
+    created_at: string;
+  };
+  schema: string;
+  old_record: any;
 }
 
 interface ReceiverProfile {
@@ -40,7 +44,6 @@ interface ExpoResponse {
   errors?: ExpoError[];
 }
 
-// Type declarations for Deno globals
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
   env: {
@@ -50,12 +53,16 @@ declare const Deno: {
 
 Deno.serve(async (req: Request) => {
   try {
-    // Parse the incoming webhook payload
-    const payload: NotificationPayload = await req.json();
+    const payload: WebhookPayload = await req.json();
     
-    console.log('📨 Received notification request:', payload);
+    console.log('📨 Received webhook payload:', payload);
 
-    // Initialize Supabase client with service role key
+    // Extract the actual message data from the record
+    const { id: messageId, sender_id, receiver_id, content, created_at } = payload.record;
+
+    console.log('📨 Extracted data:', { messageId, sender_id, receiver_id });
+
+    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -65,11 +72,11 @@ Deno.serve(async (req: Request) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get receiver's profile with push token and notification settings
+    // Get receiver's profile
     const { data: receiverProfile, error: receiverError } = await supabase
       .from('profiles')
       .select('expo_push_token, chat_notifications_enabled, name, username')
-      .eq('id', payload.receiver_id)
+      .eq('id', receiver_id)
       .single();
 
     if (receiverError || !receiverProfile) {
@@ -82,7 +89,7 @@ Deno.serve(async (req: Request) => {
 
     const typedReceiverProfile = receiverProfile as ReceiverProfile;
 
-    // Check if notifications are enabled and push token exists
+    // Check if notifications are enabled
     if (!typedReceiverProfile.chat_notifications_enabled || !typedReceiverProfile.expo_push_token) {
       console.log('⚠️ Notifications disabled or no push token');
       return new Response(
@@ -95,34 +102,34 @@ Deno.serve(async (req: Request) => {
     const { data: senderProfile } = await supabase
       .from('profiles')
       .select('name, username')
-      .eq('id', payload.sender_id)
+      .eq('id', sender_id)
       .single();
 
     const typedSenderProfile = senderProfile as SenderProfile | null;
 
-    // Get unread message count for sender
+    // Get unread message count
     const { count: unreadCount } = await supabase
       .from('messages')
       .select('*', { count: 'exact', head: true })
-      .eq('sender_id', payload.sender_id)
-      .eq('receiver_id', payload.receiver_id)
+      .eq('sender_id', sender_id)
+      .eq('receiver_id', receiver_id)
       .is('read_at', null);
 
-    // Format sender name (first name only)
+    // Format sender name
     const senderName = typedSenderProfile?.name 
       ? typedSenderProfile.name.trim().split(' ')[0]
       : typedSenderProfile?.username || 'Someone';
 
     const fullSenderName = typedSenderProfile?.name || typedSenderProfile?.username || 'Someone';
 
-    // Truncate message if too long
-    const messagePreview = payload.content.length > 100
-      ? payload.content.substring(0, 97) + '...'
-      : payload.content;
+    // Truncate message
+    const messagePreview = content.length > 100
+      ? content.substring(0, 97) + '...'
+      : content;
 
     const totalUnread = unreadCount || 1;
 
-    // Prepare Expo push notification
+    // Prepare push notification
     const expoPushMessage = {
       to: typedReceiverProfile.expo_push_token,
       sound: 'default' as const,
@@ -131,9 +138,9 @@ Deno.serve(async (req: Request) => {
       subtitle: totalUnread > 1 ? `${totalUnread} new messages` : undefined,
       data: {
         type: 'chat_message',
-        senderId: payload.sender_id,
+        senderId: sender_id,
         senderName: fullSenderName,
-        messageId: payload.message_id,
+        messageId: messageId,
         screen: 'ChatConversationScreen',
         timestamp: Date.now(),
       },
@@ -144,7 +151,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('📤 Sending push notification:', expoPushMessage);
 
-    // Send push notification to Expo
+    // Send to Expo
     const response = await fetch(EXPO_PUSH_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -157,15 +164,15 @@ Deno.serve(async (req: Request) => {
     const result = await response.json() as ExpoResponse;
     console.log('✅ Expo response:', result);
 
-    // Log notification delivery
+    // Log notification
     const logStatus = result.data?.[0]?.status === 'ok' ? 'sent' : 'failed';
     const errorMessage = result.data?.[0]?.message || result.errors?.[0]?.message;
 
     await supabase
       .from('notification_logs')
       .insert({
-        user_id: payload.receiver_id,
-        message_id: payload.message_id,
+        user_id: receiver_id,
+        message_id: messageId,
         notification_type: 'chat_message',
         status: logStatus,
         error_message: errorMessage,
