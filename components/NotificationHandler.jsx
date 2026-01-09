@@ -7,7 +7,21 @@ import { useChatNotifications } from '../hooks/useChatNotifications';
 
 export default function NotificationHandler() {
   const router = useRouter();
-  const { enableChatNotifications, clearBadge, updateBadgeCount } = useChatNotifications();
+  
+  // Safely get chat notifications hook
+  let chatNotifications;
+  try {
+    chatNotifications = useChatNotifications();
+  } catch (error) {
+    console.warn('⚠️ Chat notifications not available:', error.message);
+    chatNotifications = {
+      enableChatNotifications: () => Promise.resolve(),
+      clearBadge: () => Promise.resolve(),
+      updateBadgeCount: () => Promise.resolve(),
+    };
+  }
+  
+  const { enableChatNotifications, clearBadge, updateBadgeCount } = chatNotifications;
   const notificationListener = useRef();
   const responseListener = useRef();
   const appState = useRef(AppState.currentState);
@@ -19,16 +33,24 @@ export default function NotificationHandler() {
     isInitialized.current = true;
 
     // Auto-enable notifications on app start with a slight delay
-    const initTimeout = setTimeout(() => {
-      enableChatNotifications();
+    const initTimeout = setTimeout(async () => {
+      try {
+        await enableChatNotifications();
+      } catch (error) {
+        console.warn('⚠️ Could not enable chat notifications:', error.message);
+      }
     }, 1000);
 
     // Monitor app state changes
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to foreground
-        clearBadge();
-        updateBadgeCount();
+        try {
+          clearBadge();
+          updateBadgeCount();
+        } catch (error) {
+          console.warn('⚠️ Badge update error:', error.message);
+        }
       }
       appState.current = nextAppState;
     });
@@ -36,8 +58,24 @@ export default function NotificationHandler() {
     // Handle notification received while app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('🔔 Notification received:', notification);
-      // Update badge count
-      updateBadgeCount();
+      const data = notification.request.content.data;
+      
+      // Update badge count for chat messages
+      if (data.type === 'chat_message') {
+        try {
+          updateBadgeCount();
+        } catch (error) {
+          console.warn('⚠️ Badge update error:', error.message);
+        }
+      }
+      
+      // Log proximity notifications
+      if (data.type === 'proximity') {
+        console.log('📍 Proximity notification received:', {
+          friendId: data.friendId,
+          distance: data.distance
+        });
+      }
     });
 
     // Handle notification tapped by user
@@ -46,9 +84,9 @@ export default function NotificationHandler() {
       
       console.log('👆 Notification tapped:', data);
       
-      // Navigate to the appropriate screen
+      // Navigate based on notification type
       if (data.type === 'chat_message' && data.senderId) {
-        // Use a timeout to ensure navigation happens after app is fully active
+        // Navigate to chat conversation
         setTimeout(() => {
           router.push({
             pathname: '/home/ChatConversationScreen',
@@ -59,8 +97,11 @@ export default function NotificationHandler() {
           });
         }, 100);
       } else if (data.type === 'proximity' && data.friendId) {
-        // Handle proximity notification tap if needed
-        console.log('Proximity notification for friend:', data.friendId);
+        // Navigate to friends list or home screen when proximity notification is tapped
+        setTimeout(() => {
+          router.push('/home/FriendsListScreen');
+          console.log('📍 Navigating to friends list for nearby friend:', data.friendId);
+        }, 100);
       }
     });
 
@@ -69,10 +110,10 @@ export default function NotificationHandler() {
       clearTimeout(initTimeout);
       subscription.remove();
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
       isInitialized.current = false;
     };
