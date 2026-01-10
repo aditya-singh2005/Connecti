@@ -1,5 +1,5 @@
-// app/home/HomeScreen.jsx
-import React, { useState } from "react";
+// app/home/HomeScreen.jsx - CLEAN, WARM, FRIENDLY UI ✨
+import React, { useState, useEffect } from "react";
 import { 
   View, 
   Text, 
@@ -8,256 +8,233 @@ import {
   TouchableOpacity, 
   RefreshControl,
   Alert,
-  Animated,
-  Dimensions
+  Linking,
+  Platform
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
-import { useLocationService } from "../../hooks/useLocationService";
-import { useNearbyFriends } from "../../hooks/useNearbyFriends";
+import { useBleService } from "../../hooks/useBLEService";
 import { useFriendships } from "../../hooks/useFriendships";
-
-const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [autoStartAttempted, setAutoStartAttempted] = useState(false);
 
-  // Location service with 30-second updates
+  // BLE service
   const {
-    location,
+    detectedFriends, // NEW: Use direct detected friends from hook
     isTracking,
     lastUpdate,
-    error: locationError,
-    debugInfo: locationDebug,
     startTracking,
     stopTracking,
-    refreshLocation
-  } = useLocationService({
-    updateInterval: 30000,
-    highAccuracy: true,
-    enableBackgroundLocation: false,
-    autoStart: true
+    refreshLocation,
+    nearbyDevices,
+    bleEnabled,
+    hasPermission: hasBLEPermission,
+    checkPermissions,
+  } = useBleService({
+    updateInterval: 15000,
+    scanDuration: 8000
   });
 
-  // Nearby friends service (only scans accepted friends)
-  const {
-    nearbyFriends,
-    isLoading: loadingFriends,
-    lastFetch,
-    error: friendsError,
-    debugInfo: friendsDebug,
-    refreshNearbyFriends,
-    friendCount,
-    hasFriends,
-    isDataStale
-  } = useNearbyFriends(location, {
-    radius: 1000,
-    autoRefresh: true,
-    refreshInterval: 60000,
-    maxResults: 50
-  });
-
-  // Friendships management
+  // Friendships
   const {
     pendingRequests,
-    isLoading: loadingFriendships,
     acceptFriendRequest,
     removeFriendship,
     friendCount: totalFriends,
     pendingCount
   } = useFriendships();
 
-  const handleManualRefresh = async () => {
-    console.log("🔄 Manual refresh triggered");
+  // Auto-start BLE
+  useEffect(() => {
+    const init = async () => {
+      if (autoStartAttempted) return;
+      setAutoStartAttempted(true);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await checkPermissions();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (!isTracking) {
+        await startTracking();
+      }
+    };
+    init();
+  }, []);
+
+  const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refreshLocation(), refreshNearbyFriends()]);
+    await refreshLocation();
     setRefreshing(false);
   };
 
-  const toggleTracking = () => {
+  const toggleBLE = async () => {
     if (isTracking) {
       stopTracking();
     } else {
-      startTracking();
+      if (!bleEnabled) {
+        Alert.alert(
+          "Turn on Bluetooth",
+          "Enable Bluetooth to find friends nearby",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Settings", onPress: () => {
+              if (Platform.OS === 'android') {
+                Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS');
+              } else {
+                Linking.openURL('App-Prefs:Bluetooth');
+              }
+            }}
+          ]
+        );
+        return;
+      }
+      await startTracking();
     }
   };
 
-  const handleAcceptRequest = async (friendshipId) => {
-    await acceptFriendRequest(friendshipId);
-  };
-
-  const handleRejectRequest = async (friendshipId) => {
-    Alert.alert(
-      "Reject Request",
-      "Are you sure you want to reject this friend request?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Reject", 
-          style: "destructive",
-          onPress: () => removeFriendship(friendshipId)
-        }
-      ]
-    );
-  };
-
-  const getLocationStatus = () => {
-    if (!location) return { text: "No location", color: "#999" };
-    if (locationError) return { text: "Location error", color: "#F44336" };
-    if (!isTracking) return { text: "Tracking paused", color: "#FF9800" };
-    return { text: "Active", color: "#4CAF50" };
-  };
-
-  const getLastUpdateText = () => {
-    if (!lastUpdate) return "Never";
-    const seconds = Math.floor((Date.now() - lastUpdate.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
+  const getDistanceEmoji = (distance) => {
+    if (distance < 10) return '🔥';
+    if (distance < 25) return '👋';
+    return '📍';
   };
 
   const getDistanceColor = (distance) => {
-    if (distance < 100) return "#4CAF50";
-    if (distance < 500) return "#FF9800";
-    return "#2196F3";
+    if (distance < 10) return '#10B981'; // Green - very close
+    if (distance < 25) return '#4A90E2'; // Blue - nearby
+    return '#6B7280'; // Gray - far
   };
-
-  const statusInfo = getLocationStatus();
 
   return (
     <ScrollView 
-      contentContainerStyle={styles.container}
+      style={styles.container}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={handleManualRefresh}
-          tintColor="#1E88E5"
-          colors={["#1E88E5"]}
+          onRefresh={handleRefresh}
+          colors={["#4A90E2"]}
+          tintColor="#4A90E2"
         />
       }
-      showsVerticalScrollIndicator={false}
     >
-      {/* Header with gradient effect */}
+      {/* Warm Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.welcome}>Connecti</Text>
-          <Text style={styles.subtitle}>Stay connected with nearby friends</Text>
+          <Text style={styles.greeting}>Hello! 👋</Text>
+          <Text style={styles.appName}>Connecti</Text>
         </View>
         <TouchableOpacity 
-          style={styles.settingsButton}
+          style={styles.settingsBtn}
           onPress={() => router.push('/home/SettingsScreen')}
         >
-          <Ionicons name="settings-outline" size={24} color="#1E88E5" />
+          <Ionicons name="settings-outline" size={26} color="#4A90E2" />
         </TouchableOpacity>
       </View>
 
-      {/* Quick Stats Row */}
-      <View style={styles.quickStatsRow}>
-        <View style={[styles.quickStatCard, { backgroundColor: '#E3F2FD' }]}>
-          <Ionicons name="people" size={24} color="#1E88E5" />
-          <Text style={styles.quickStatNumber}>{totalFriends}</Text>
-          <Text style={styles.quickStatLabel}>Friends</Text>
+      {/* Status Banner - Only show if there's an issue */}
+      {(!bleEnabled || !hasBLEPermission) && (
+        <TouchableOpacity 
+          style={styles.statusBanner}
+          onPress={toggleBLE}
+        >
+          <Ionicons 
+            name={!bleEnabled ? "bluetooth-outline" : "lock-closed-outline"} 
+            size={24} 
+            color="#4A90E2" 
+          />
+          <View style={styles.bannerText}>
+            <Text style={styles.bannerTitle}>
+              {!bleEnabled ? "Bluetooth is off" : "Permission needed"}
+            </Text>
+            <Text style={styles.bannerSubtitle}>
+              Tap to {!bleEnabled ? "enable" : "grant access"}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#4A90E2" />
+        </TouchableOpacity>
+      )}
+
+      {/* Simple Stats - 2 cards only */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="people" size={32} color="#4A90E2" />
+          </View>
+          <Text style={styles.statNumber}>{totalFriends}</Text>
+          <Text style={styles.statLabel}>Friends</Text>
         </View>
-        <View style={[styles.quickStatCard, { backgroundColor: '#E8F5E9' }]}>
-          <Ionicons name="location" size={24} color="#4CAF50" />
-          <Text style={styles.quickStatNumber}>{friendCount}</Text>
-          <Text style={styles.quickStatLabel}>Nearby</Text>
-        </View>
-        <View style={[styles.quickStatCard, { backgroundColor: '#FFF3E0' }]}>
-          <Ionicons name="person-add" size={24} color="#FF9800" />
-          <Text style={styles.quickStatNumber}>{pendingCount}</Text>
-          <Text style={styles.quickStatLabel}>Requests</Text>
+        
+        <View style={[styles.statCard, styles.statCardActive]}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="radio-outline" size={32} color="#4ECDC4" />
+          </View>
+          <Text style={styles.statNumber}>{detectedFriends.length}</Text>
+          <Text style={styles.statLabel}>Nearby</Text>
         </View>
       </View>
 
-      {/* Location Status Compact Card */}
-      <View style={styles.locationCompactCard}>
-        <View style={styles.locationCompactHeader}>
-          <View style={styles.locationCompactLeft}>
-            <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
-            <View>
-              <Text style={styles.locationCompactTitle}>Location Status</Text>
-              <Text style={[styles.locationCompactStatus, { color: statusInfo.color }]}>
-                {statusInfo.text}
-              </Text>
+      {/* Scanning Control - Simplified */}
+      <View style={styles.scanCard}>
+        <View style={styles.scanContent}>
+          <View style={styles.scanInfo}>
+            <View style={styles.scanTitleRow}>
+              <Text style={styles.scanTitle}>Friend Detector</Text>
+              {isTracking && (
+                <View style={styles.liveIndicator}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>Live</Text>
+                </View>
+              )}
             </View>
-          </View>
-          <View style={styles.locationCompactActions}>
-            <TouchableOpacity 
-              onPress={refreshLocation}
-              style={styles.iconButton}
-            >
-              <Ionicons name="refresh" size={20} color="#1E88E5" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={toggleTracking}
-              style={[styles.iconButton, { marginLeft: 8 }]}
-            >
-              <Ionicons 
-                name={isTracking ? "pause" : "play"} 
-                size={20} 
-                color={isTracking ? "#F44336" : "#4CAF50"} 
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-        <Text style={styles.locationCompactUpdate}>
-          Updated {getLastUpdateText()}
-        </Text>
-      </View>
-
-      {/* Proximity Notifications Card - Enhanced */}
-      <TouchableOpacity 
-        style={styles.proximityCard}
-        onPress={() => router.push('/home/ProximitySettingsScreen')}
-        activeOpacity={0.8}
-      >
-        <View style={styles.proximityIconContainer}>
-          <Ionicons name="notifications" size={28} color="#1E88E5" />
-        </View>
-        <View style={styles.proximityContent}>
-          <Text style={styles.proximityTitle}>Proximity Alerts</Text>
-          <Text style={styles.proximitySubtitle}>
-            Configure when to get notified
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={24} color="#1E88E5" />
-      </TouchableOpacity>
-
-      {/* Pending Friend Requests - Enhanced */}
-      {pendingRequests.length > 0 && (
-        <View style={styles.requestsSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Friend Requests</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{pendingRequests.length}</Text>
-            </View>
+            <Text style={styles.scanSubtitle}>
+              {isTracking 
+                ? `Found ${nearbyDevices?.length || 0} devices nearby`
+                : "Start to find friends around you"
+              }
+            </Text>
           </View>
           
-          {pendingRequests.map(request => (
-            <View key={request.id} style={styles.requestCard}>
+          <TouchableOpacity 
+            style={[styles.scanButton, isTracking && styles.scanButtonActive]}
+            onPress={toggleBLE}
+            disabled={!bleEnabled || !hasBLEPermission}
+          >
+            <Ionicons 
+              name={isTracking ? "pause" : "play"} 
+              size={28} 
+              color="white" 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Friend Requests - Only if exists */}
+      {pendingCount > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>New Requests 💌</Text>
+          {pendingRequests.map(req => (
+            <View key={req.id} style={styles.requestCard}>
               <View style={styles.requestAvatar}>
-                <Ionicons name="person" size={24} color="#1E88E5" />
+                <Text style={styles.requestInitial}>
+                  {req.name.charAt(0).toUpperCase()}
+                </Text>
               </View>
               <View style={styles.requestInfo}>
-                <Text style={styles.requestName}>{request.name}</Text>
-                <Text style={styles.requestContact}>{request.contact}</Text>
+                <Text style={styles.requestName}>{req.name}</Text>
+                <Text style={styles.requestEmail}>{req.contact}</Text>
               </View>
               <View style={styles.requestActions}>
                 <TouchableOpacity 
-                  onPress={() => handleAcceptRequest(request.id)}
-                  style={styles.acceptButtonSmall}
+                  onPress={() => acceptFriendRequest(req.id)}
+                  style={styles.acceptBtn}
                 >
-                  <Ionicons name="checkmark" size={20} color="white" />
+                  <Ionicons name="checkmark" size={22} color="white" />
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  onPress={() => handleRejectRequest(request.id)}
-                  style={styles.rejectButtonSmall}
+                  onPress={() => removeFriendship(req.id)}
+                  style={styles.declineBtn}
                 >
-                  <Ionicons name="close" size={20} color="white" />
+                  <Ionicons name="close" size={22} color="#666" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -265,324 +242,324 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Nearby Friends Section - Enhanced */}
-      <View style={styles.friendsSection}>
+      {/* Nearby Friends - Clean & Simple */}
+      <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Nearby Friends</Text>
-          <View style={styles.sectionRight}>
-            {isDataStale() && (
-              <View style={styles.staleIndicator}>
-                <Ionicons name="time-outline" size={12} color="#FF9800" />
-                <Text style={styles.staleText}>Stale</Text>
-              </View>
-            )}
-          </View>
+          <Text style={styles.sectionTitle}>Friends Nearby 📍</Text>
+          {isTracking && (
+            <TouchableOpacity onPress={handleRefresh}>
+              <Ionicons name="refresh" size={22} color="#4A90E2" />
+            </TouchableOpacity>
+          )}
         </View>
 
-        {loadingFriends ? (
-          <View style={styles.loadingContainer}>
-            <Ionicons name="search" size={32} color="#1E88E5" />
-            <Text style={styles.loadingText}>Finding nearby friends...</Text>
+        {!isTracking ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="pause-circle-outline" size={64} color="#DDD" />
+            </View>
+            <Text style={styles.emptyTitle}>Detector Paused</Text>
+            <Text style={styles.emptyMessage}>
+              Start scanning to find friends nearby
+            </Text>
+            <TouchableOpacity style={styles.emptyButton} onPress={toggleBLE}>
+              <Text style={styles.emptyButtonText}>Start Scanning</Text>
+            </TouchableOpacity>
           </View>
-        ) : hasFriends ? (
-          <View style={styles.friendsList}>
-            {nearbyFriends.map(friend => {
-              const distanceInMeters = parseFloat(friend.distanceFormatted);
-              return (
-                <TouchableOpacity 
-                  key={friend.id} 
-                  style={styles.friendCard}
-                  onPress={() => {
-                    Alert.alert("Friend Info", `${friend.name} is ${friend.distanceFormatted} away`);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.friendLeft}>
-                    <View style={styles.friendAvatar}>
-                      <Ionicons name="person" size={24} color="#1E88E5" />
-                    </View>
-                    <View style={styles.friendInfo}>
-                      <Text style={styles.friendName}>{friend.name}</Text>
-                      <View style={styles.distanceRow}>
-                        <Ionicons 
-                          name="location" 
-                          size={14} 
-                          color={getDistanceColor(distanceInMeters)} 
-                        />
-                        <Text style={[
-                          styles.friendDistance,
-                          { color: getDistanceColor(distanceInMeters) }
-                        ]}>
-                          {friend.distanceFormatted}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#999" />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="compass-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyStateTitle}>
-              {location 
-                ? totalFriends === 0 
-                  ? "No Friends Yet"
-                  : "No Nearby Friends"
-                : "Location Disabled"
+        ) : detectedFriends.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="search-outline" size={64} color="#DDD" />
+            </View>
+            <Text style={styles.emptyTitle}>Searching...</Text>
+            <Text style={styles.emptyMessage}>
+              {totalFriends === 0 
+                ? "Add friends to detect them nearby"
+                : "Make sure friends have their detector on"
               }
             </Text>
-            <Text style={styles.emptyStateText}>
-              {location 
-                ? totalFriends === 0 
-                  ? "Add friends to see them on the map"
-                  : "Your friends aren't nearby right now"
-                : "Enable location to find nearby friends"
-              }
-            </Text>
-            {location && totalFriends === 0 && (
+            {totalFriends === 0 && (
               <TouchableOpacity 
+                style={styles.emptyButton}
                 onPress={() => router.push('/home/SearchScreen')}
-                style={styles.emptyStateButton}
               >
-                <Ionicons name="person-add" size={20} color="white" />
-                <Text style={styles.emptyStateButtonText}>Add Friends</Text>
+                <Text style={styles.emptyButtonText}>Add Friends</Text>
               </TouchableOpacity>
             )}
           </View>
-        )}
-
-        {lastFetch && hasFriends && (
-          <Text style={styles.lastFetchText}>
-            Last updated {Math.floor((Date.now() - lastFetch.getTime()) / 1000)}s ago
-          </Text>
+        ) : (
+          <View>
+            {detectedFriends.map(friend => (
+              <TouchableOpacity 
+                key={friend.id} 
+                style={styles.friendCard}
+                onPress={() => {
+                  Alert.alert(
+                    `${getDistanceEmoji(friend.distance)} ${friend.name}`,
+                    `About ${Math.round(friend.distance)}m away\n${friend.similarity}% signal match`,
+                    [{ text: "Got it!" }]
+                  );
+                }}
+              >
+                <View style={styles.friendAvatar}>
+                  <Text style={styles.friendInitial}>
+                    {friend.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.friendInfo}>
+                  <Text style={styles.friendName}>{friend.name}</Text>
+                  <View style={styles.friendMeta}>
+                    <Text style={styles.friendDistance}>
+                      {getDistanceEmoji(friend.distance)} ~{Math.round(friend.distance)}m away
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.friendIndicator, { 
+                  backgroundColor: getDistanceColor(friend.distance) 
+                }]} />
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
       </View>
 
-      {/* Quick Actions */}
+      {/* Quick Actions - Simplified */}
       <View style={styles.quickActions}>
         <TouchableOpacity 
-          style={styles.quickActionButton}
+          style={styles.quickAction}
           onPress={() => router.push('/home/SearchScreen')}
         >
-          <Ionicons name="person-add-outline" size={24} color="#1E88E5" />
+          <View style={styles.quickActionIcon}>
+            <Ionicons name="person-add-outline" size={24} color="#4A90E2" />
+          </View>
           <Text style={styles.quickActionText}>Add Friends</Text>
         </TouchableOpacity>
+
         <TouchableOpacity 
-          style={styles.quickActionButton}
-          onPress={() => router.push('/home/MapScreen')}
+          style={styles.quickAction}
+          onPress={() => router.push('/home/ProximitySettingsScreen')}
         >
-          <Ionicons name="map-outline" size={24} color="#1E88E5" />
-          <Text style={styles.quickActionText}>View Map</Text>
+          <View style={styles.quickActionIcon}>
+            <Ionicons name="notifications-outline" size={24} color="#4A90E2" />
+          </View>
+          <Text style={styles.quickActionText}>Alerts</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.quickAction}
+          onPress={() => router.push('/home/PermissionsScreen')}
+        >
+          <View style={styles.quickActionIcon}>
+            <Ionicons name="shield-checkmark-outline" size={24} color="#4A90E2" />
+          </View>
+          <Text style={styles.quickActionText}>Permissions</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Debug Information */}
+      {/* Debug Info - At Bottom */}
       {__DEV__ && (
         <View style={styles.debugSection}>
-          <Text style={styles.debugTitle}>🐛 Debug Info</Text>
-          
-          <View style={styles.debugCard}>
-            <Text style={styles.debugCardTitle}>Location Service</Text>
-            <Text style={styles.debugText}>Tracking: {isTracking ? 'Yes' : 'No'}</Text>
-            <Text style={styles.debugText}>
-              Accuracy: {locationDebug.locationAccuracy ? `${Math.round(locationDebug.locationAccuracy)}m` : 'Unknown'}
-            </Text>
-            {location && (
-              <Text style={styles.debugText}>
-                Coords: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-              </Text>
-            )}
-            {locationError && (
-              <Text style={styles.errorText}>Error: {locationError}</Text>
-            )}
-          </View>
-
-          <View style={styles.debugCard}>
-            <Text style={styles.debugCardTitle}>Nearby Friends</Text>
-            <Text style={styles.debugText}>
-              Search Radius: {friendsDebug.searchRadius}m
-            </Text>
-            <Text style={styles.debugText}>
-              Friends Found: {friendsDebug.friendsCount || 0}
-            </Text>
-            {friendsError && (
-              <Text style={styles.errorText}>Error: {friendsError}</Text>
-            )}
+          <TouchableOpacity 
+            style={styles.debugHeader}
+            onPress={() => {
+              // Can add toggle functionality if needed
+            }}
+          >
+            <Text style={styles.debugTitle}>🐛 Debug Info</Text>
+          </TouchableOpacity>
+          <View style={styles.debugContent}>
+            <Text style={styles.debugText}>Tracking: {isTracking ? '✅' : '❌'}</Text>
+            <Text style={styles.debugText}>Bluetooth: {bleEnabled ? '✅' : '❌'}</Text>
+            <Text style={styles.debugText}>Permission: {hasBLEPermission ? '✅' : '❌'}</Text>
+            <Text style={styles.debugText}>Devices: {nearbyDevices?.length || 0}</Text>
+            <Text style={styles.debugText}>Friends Detected: {detectedFriends.length}</Text>
+            <Text style={styles.debugText}>Total Friends: {totalFriends}</Text>
           </View>
         </View>
       )}
+
+      {/* Bottom padding */}
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    backgroundColor: "#F8F9FA",
-    padding: 16,
-    paddingBottom: 32,
+    flex: 1,
+    backgroundColor: '#FAFAFA',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingTop: 10,
+    alignItems: 'flex-start',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 24,
+    backgroundColor: '#FFF',
   },
-  welcome: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#1E88E5",
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 4,
-  },
-  settingsButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'white',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  quickStatsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  quickStatCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  quickStatNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
-    marginTop: 8,
-  },
-  quickStatLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  locationCompactCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  locationCompactHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  locationCompactLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  locationCompactTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  locationCompactStatus: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  locationCompactActions: {
-    flexDirection: 'row',
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  locationCompactUpdate: {
-    fontSize: 12,
+  greeting: {
+    fontSize: 16,
     color: '#999',
-    marginTop: 8,
-    marginLeft: 24,
+    marginBottom: 4,
   },
-  proximityCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#1E88E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#1E88E5',
+  appName: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#2D3436',
+    letterSpacing: -1,
   },
-  proximityIconContainer: {
+  settingsBtn: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#EBF5FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
-  proximityContent: {
-    flex: 1,
-  },
-  proximityTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  proximitySubtitle: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
-  },
-  requestsSection: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 8,
     padding: 16,
-    marginBottom: 16,
+    borderRadius: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4A90E2',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
+  },
+  bannerText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  bannerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3436',
+    marginBottom: 2,
+  },
+  bannerSubtitle: {
+    fontSize: 14,
+    color: '#999',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    gap: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  statCardActive: {
+    backgroundColor: '#F0FDFA',
+    borderWidth: 2,
+    borderColor: '#4ECDC4',
+  },
+  statIconContainer: {
+    marginBottom: 12,
+  },
+  statNumber: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#2D3436',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#999',
+    fontWeight: '500',
+  },
+  scanCard: {
+    backgroundColor: '#FFF',
+    marginHorizontal: 24,
+    marginVertical: 8,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  scanContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scanInfo: {
+    flex: 1,
+  },
+  scanTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 6,
+  },
+  scanTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2D3436',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  liveText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  scanSubtitle: {
+    fontSize: 14,
+    color: '#999',
+  },
+  scanButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4A90E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4A90E2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  scanButtonActive: {
+    backgroundColor: '#95A5A6',
+    shadowColor: '#95A5A6',
+  },
+  section: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -591,249 +568,212 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#333',
-  },
-  badge: {
-    backgroundColor: '#FF9800',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  sectionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  staleIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF3E0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  staleText: {
-    fontSize: 11,
-    color: '#FF9800',
-    fontWeight: '600',
+    color: '#2D3436',
   },
   requestCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
-    marginBottom: 8,
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   requestAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#E3F2FD',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#EBF5FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+  },
+  requestInitial: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#4A90E2',
   },
   requestInfo: {
     flex: 1,
   },
   requestName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#2D3436',
+    marginBottom: 2,
   },
-  requestContact: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
+  requestEmail: {
+    fontSize: 14,
+    color: '#999',
   },
   requestActions: {
     flexDirection: 'row',
     gap: 8,
   },
-  acceptButtonSmall: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rejectButtonSmall: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F44336',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  friendsSection: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  loadingContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 15,
-    color: '#666',
-    marginTop: 12,
-  },
-  friendsList: {
-    gap: 8,
-  },
-  friendCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  friendLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  friendAvatar: {
+  acceptBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+  },
+  declineBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyIcon: {
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2D3436',
+    marginBottom: 8,
+  },
+  emptyMessage: {
+    fontSize: 15,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  emptyButton: {
+    backgroundColor: '#4A90E2',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 24,
+  },
+  emptyButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  friendCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  friendAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#F0FDFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    borderWidth: 2,
+    borderColor: '#4ECDC4',
+  },
+  friendInitial: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#4ECDC4',
   },
   friendInfo: {
     flex: 1,
   },
   friendName: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '600',
-    color: '#333',
+    color: '#2D3436',
+    marginBottom: 4,
   },
-  distanceRow: {
+  friendMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
   },
   friendDistance: {
-    fontSize: 13,
+    fontSize: 14,
+    color: '#999',
     fontWeight: '500',
   },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  emptyStateButton: {
-    flexDirection: 'row',
-    backgroundColor: '#1E88E5',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: 'center',
-    marginTop: 20,
-    gap: 8,
-  },
-  emptyStateButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  lastFetchText: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'center',
-    marginTop: 12,
+  friendIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   quickActions: {
     flexDirection: 'row',
+    paddingHorizontal: 24,
     gap: 12,
-    marginBottom: 16,
+    marginTop: 8,
   },
-  quickActionButton: {
+  quickAction: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#FFF',
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 2,
-    gap: 8,
+    elevation: 1,
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FAFAFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   quickActionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#333',
+    color: '#2D3436',
   },
   debugSection: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 32,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  debugHeader: {
     padding: 16,
-    marginTop: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   debugTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2D3436',
   },
-  debugCard: {
-    backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  debugCardTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
+  debugContent: {
+    padding: 16,
+    gap: 8,
   },
   debugText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#F44336',
-    marginBottom: 4,
+    fontSize: 13,
+    color: '#6B7280',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });

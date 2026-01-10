@@ -12,15 +12,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aditya.connectiapp",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "location",
-          "fetch",
-          "remote-notification"
-        ],
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "We need your location to notify you when friends are nearby, even when the app is in the background.",
-        "NSLocationWhenInUseUsageDescription": "We need your location to show you nearby friends and send proximity notifications.",
-        "NSLocationAlwaysUsageDescription": "We need your location in the background to notify you when friends are nearby.",
-        "NSUserNotificationsUsageDescription": "We need to send you notifications when you receive messages or friends are nearby."
+        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "NSBluetoothAlwaysUsageDescription": "Connecti needs Bluetooth to detect nearby friends and enable proximity notifications.",
+        "NSBluetoothPeripheralUsageDescription": "Connecti needs Bluetooth to connect with nearby friends and share presence.",
+        "NSUserNotificationsUsageDescription": "We need to send you notifications when you receive messages or friends are nearby via Bluetooth."
       }
     },
     "android": {
@@ -33,15 +28,17 @@
       "useNextNotificationsApi": true,
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE",
         "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION",
         "WAKE_LOCK",
-        "VIBRATE"
+        "VIBRATE",
+        "ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -61,21 +58,18 @@
         }
       ],
       [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow Connecti to notify you when friends are nearby, even when the app is closed.",
-          "locationAlwaysPermission": "Allow Connecti to access your location in the background to send proximity notifications when friends are nearby.",
-          "locationWhenInUsePermission": "Allow Connecti to access your location to show nearby friends and send notifications.",
-          "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
-        }
-      ],
-      [
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",
           "color": "#2196F3"
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow Connecti to connect to nearby Bluetooth devices to detect your friends."
         }
       ]
     ],

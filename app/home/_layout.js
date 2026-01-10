@@ -269,6 +269,24 @@ export default function HomeLayout() {
           headerShown: false,
         }}
       />
+      
+      {/* 🚫 HIDE PermissionsScreen from navbar */}
+      <Tabs.Screen
+        name="PermissionsScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      
+      {/* 🚫 HIDE SettingsScreen from navbar */}
+      <Tabs.Screen
+        name="SettingsScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }
