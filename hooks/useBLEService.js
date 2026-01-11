@@ -1,8 +1,9 @@
-// hooks/useBLEService.js - WITH REAL-TIME FRIEND DETECTION
+// hooks/useBLEService.js - WITH REAL-TIME FRIEND DETECTION + FIXED LOCATION HANDLING
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Platform, PermissionsAndroid, Alert, AppState, Linking } from "react-native";
 import { supabase } from "../lib/supabase";
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   rssiToDistance, 
@@ -309,13 +310,22 @@ async function checkAndNotifyNearbyFriends(nearbyDevices, userId, onFriendDetect
   }
 }
 
+// Check if location services are enabled - SILENT CHECK
+const checkLocationEnabled = async () => {
+  try {
+    const enabled = await Location.hasServicesEnabledAsync();
+    return enabled;
+  } catch (error) {
+    return false;
+  }
+};
+
 const checkBluetoothState = async () => {
   if (!bleManager) return false;
   try {
     const state = await bleManager.state();
     return state === 'PoweredOn';
   } catch (error) {
-    console.error("❌ Error checking Bluetooth state:", error);
     return false;
   }
 };
@@ -325,7 +335,6 @@ const requestBLEPermissions = async () => {
 
   try {
     const androidVersion = Platform.Version;
-    console.log(`📱 Android version: ${androidVersion}`);
 
     if (androidVersion >= 31) {
       const permissions = [
@@ -347,7 +356,6 @@ const requestBLEPermissions = async () => {
       );
     }
   } catch (err) {
-    console.error("❌ BLE Permission request error:", err);
     return false;
   }
 };
@@ -360,7 +368,7 @@ export const useBleService = (options = {}) => {
   } = options;
 
   const [nearbyDevices, setNearbyDevices] = useState(new Map());
-  const [detectedFriends, setDetectedFriends] = useState([]); // NEW: Real-time friend detection
+  const [detectedFriends, setDetectedFriends] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [error, setError] = useState(null);
@@ -451,7 +459,6 @@ export const useBleService = (options = {}) => {
         return { bleEnabled: btEnabled, hasPermission: btEnabled };
       }
     } catch (error) {
-      console.error("❌ Error checking permissions:", error);
       setError(error.message);
       return { bleEnabled: false, hasPermission: false };
     } finally {
@@ -466,7 +473,12 @@ export const useBleService = (options = {}) => {
     }
     
     try {
-      console.log("🔵 Initializing BLE Manager...");
+      // SILENTLY CHECK LOCATION - Don't log errors
+      const locationOn = await checkLocationEnabled();
+      if (!locationOn) {
+        // Location is off - silently return false without error logs
+        return false;
+      }
       
       const { bleEnabled: btOn, hasPermission: permsOk } = await checkPermissions();
       
@@ -478,11 +490,13 @@ export const useBleService = (options = {}) => {
       const enabled = state === 'PoweredOn';
       setBleEnabled(enabled);
       
-      console.log("✅ BLE initialized successfully");
       isInitialized.current = true;
       return true;
     } catch (error) {
-      console.error('❌ BLE initialization error:', error);
+      // Silently handle location errors
+      if (error.message && error.message.includes('Location')) {
+        return false;
+      }
       setError(error.message);
       return false;
     }
@@ -496,12 +510,10 @@ export const useBleService = (options = {}) => {
     }
 
     bleStateSubscription.current = bleManager.onStateChange((state) => {
-      console.log("📡 Bluetooth state changed:", state);
       const enabled = state === 'PoweredOn';
       setBleEnabled(enabled);
       
       if (!enabled && isScanning) {
-        console.log("⚠️ Bluetooth turned off, stopping scan");
         stopTracking();
       }
     }, true);
@@ -548,7 +560,7 @@ export const useBleService = (options = {}) => {
         return updated;
       });
     } catch (err) {
-      console.error("❌ Error processing device:", err);
+      // Silently ignore device processing errors
     }
   }, []);
 
@@ -556,7 +568,6 @@ export const useBleService = (options = {}) => {
     try {
       const now = Date.now();
       if (now - lastFingerprintUpdate.current < 3000) {
-        console.log("⏭️ Skipping fingerprint update (too soon)");
         return;
       }
       lastFingerprintUpdate.current = now;
@@ -572,11 +583,8 @@ export const useBleService = (options = {}) => {
         }));
 
       if (allDevices.length === 0) {
-        console.log("⚠️ No devices to update in fingerprint");
         return;
       }
-
-      console.log(`📍 Updating BLE fingerprint with ${allDevices.length} devices`);
 
       const { error } = await supabase
         .from('profiles')
@@ -590,23 +598,25 @@ export const useBleService = (options = {}) => {
       
       if (error) {
         console.error("❌ Database update error:", error);
-      } else {
-        console.log("✅ BLE fingerprint updated successfully");
       }
     } catch (error) {
       console.error('❌ Error updating BLE fingerprint:', error);
     }
   }, []);
 
-  // NEW: Callback to update detected friends in state
   const handleFriendDetected = useCallback((friends) => {
-    console.log(`🎯 UI UPDATE: ${friends.length} friends detected`);
     setDetectedFriends(friends);
   }, []);
 
   const performBLEScan = useCallback(async () => {
     if (!bleManager) {
-      console.warn("⚠️ BLE not available");
+      return;
+    }
+    
+    // SILENT LOCATION CHECK - Don't show errors
+    const locationOn = await checkLocationEnabled();
+    if (!locationOn) {
+      // Location is off - silently skip scan
       return;
     }
     
@@ -624,12 +634,9 @@ export const useBleService = (options = {}) => {
     }
 
     try {
-      console.log("\n📡 Starting BLE scan...");
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (userError || !user) {
-        console.log("⚠️ No authenticated user");
         return;
       }
 
@@ -637,8 +644,6 @@ export const useBleService = (options = {}) => {
       setError(null);
 
       await bleManager.stopDeviceScan();
-
-      console.log("📡 Scanning for BLE devices...");
 
       bleManager.startDeviceScan(
         null,
@@ -648,8 +653,10 @@ export const useBleService = (options = {}) => {
         },
         (error, device) => {
           if (error) {
-            console.error("❌ Scan error:", error.message);
-            setError(error.message);
+            // SILENT ERROR HANDLING - Don't log location errors
+            if (!error.message || !error.message.includes('Location')) {
+              setError(error.message);
+            }
             return;
           }
 
@@ -669,28 +676,21 @@ export const useBleService = (options = {}) => {
           setIsScanning(false);
           setLastUpdate(new Date());
           
-          const deviceCount = nearbyDevices.size;
-          console.log(`✅ Scan completed. Found ${deviceCount} devices`);
-          
-          // Update fingerprint
           await updateBLEFingerprint(user.id, nearbyDevices);
-          
-          // Check for nearby friends and IMMEDIATELY update UI
           await checkAndNotifyNearbyFriends(nearbyDevices, user.id, handleFriendDetected);
           
           setDebugInfo(prev => ({
             ...prev,
             lastScanEnd: new Date().toISOString(),
-            devicesFound: deviceCount
+            devicesFound: nearbyDevices.size
           }));
         } catch (err) {
-          console.error("❌ Error stopping scan:", err);
+          // Silently handle errors
         }
       }, scanDuration);
       
     } catch (err) {
-      console.error("❌ BLE scan error:", err);
-      setError(err.message);
+      // Silently handle scan errors
       setIsScanning(false);
     }
   }, [scanDuration, handleDeviceDiscovered, nearbyDevices, checkPermissions, initializeBLE, updateBLEFingerprint, handleFriendDetected]);
@@ -706,7 +706,12 @@ export const useBleService = (options = {}) => {
     }
     
     try {
-      console.log("🚀 Starting BLE tracking...");
+      // Check location FIRST - silently
+      const locationOn = await checkLocationEnabled();
+      if (!locationOn) {
+        // Don't alert - let the UI banner handle it
+        return false;
+      }
       
       const { bleEnabled: btOn, hasPermission: permsOk } = await checkPermissions();
       
@@ -720,7 +725,6 @@ export const useBleService = (options = {}) => {
       }
 
       if (!permsOk) {
-        console.log("❌ Requesting permissions...");
         const granted = await requestBLEPermissions();
         if (!granted) {
           return false;
@@ -748,33 +752,24 @@ export const useBleService = (options = {}) => {
             ble_last_seen: new Date().toISOString(),
           })
           .eq('id', user.id);
-
-        console.log(`📱 My BLE ID: ${bleId}`);
       }
 
-      // Start first scan immediately
       await performBLEScan();
 
-      // Then continue periodic scans
       scanIntervalRef.current = setInterval(async () => {
         if (appStateRef.current === 'active') {
-          console.log("🔄 Periodic scan");
           await performBLEScan();
         }
       }, updateInterval);
 
-      console.log(`✅ BLE tracking started (${updateInterval/1000}s intervals)`);
       return true;
     } catch (err) {
-      console.error("❌ Error starting tracking:", err);
-      setError(err.message);
+      // Silently handle errors
       return false;
     }
   }, [initializeBLE, performBLEScan, updateInterval, checkPermissions, subscribeToBluetoothState]);
 
   const stopTracking = useCallback(async () => {
-    console.log("⏹️ Stopping BLE tracking...");
-    
     if (scanIntervalRef.current) {
       clearInterval(scanIntervalRef.current);
       scanIntervalRef.current = null;
@@ -789,12 +784,12 @@ export const useBleService = (options = {}) => {
       try {
         await bleManager.stopDeviceScan();
       } catch (err) {
-        console.log("⚠️ Error stopping scan:", err);
+        // Silently ignore
       }
     }
 
     setIsScanning(false);
-    setDetectedFriends([]); // Clear detected friends
+    setDetectedFriends([]);
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -814,7 +809,6 @@ export const useBleService = (options = {}) => {
   }, []);
 
   const refreshLocation = useCallback(async () => {
-    console.log("🔄 Manual refresh");
     await performBLEScan();
   }, [performBLEScan]);
 
@@ -843,34 +837,22 @@ export const useBleService = (options = {}) => {
         }
       }
       
-      if (removedCount > 0) {
-        console.log(`🧹 Cleaned ${removedCount} stale devices`);
-      }
-      
       return updated;
     });
 
-    // Also cleanup stale detected friends
     setDetectedFriends(prev => {
       const updated = prev.filter(friend => {
         const age = now - friend.detectedAt;
-        return age < 60000; // Keep friends detected in last 60 seconds
+        return age < 60000;
       });
-      
-      if (updated.length !== prev.length) {
-        console.log(`🧹 Cleaned ${prev.length - updated.length} stale detected friends`);
-      }
       
       return updated;
     });
   }, []);
 
   const handleAppStateChange = useCallback((nextAppState) => {
-    console.log("📱 App state:", appStateRef.current, "->", nextAppState);
-    
     if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
       if (scanIntervalRef.current && isInitialized.current) {
-        console.log("🔄 App resumed");
         checkPermissions().then(() => performBLEScan());
       }
     }
@@ -919,11 +901,11 @@ export const useBleService = (options = {}) => {
       isInitialized: isInitialized.current,
       isCheckingPermissions,
       bleAvailable,
-      detectedFriends: detectedFriends.length, // NEW
+      detectedFriends: detectedFriends.length,
     },
     
     nearbyDevices: Array.from(nearbyDevices.values()),
-    detectedFriends, // NEW: Export detected friends for UI
+    detectedFriends,
     hasPermission,
     bleEnabled,
     bleAvailable,
@@ -935,6 +917,6 @@ export const useBleService = (options = {}) => {
     refreshLocation,
     getCurrentLocation,
     isLocationStale,
-    checkPermissions,
+    checkPermissions
   };
 };

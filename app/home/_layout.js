@@ -279,14 +279,7 @@ export default function HomeLayout() {
         }}
       />
       
-      {/* 🚫 HIDE SettingsScreen from navbar */}
-      <Tabs.Screen
-        name="SettingsScreen"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
-      />
+      
     </Tabs>
   );
 }
