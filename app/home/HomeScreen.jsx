@@ -1,166 +1,223 @@
-import React, { useState, useEffect } from "react";
+// app/home/HomeScreen.jsx - CONNECTI HOME - MENU ONLY ✨
+import React from "react";
 import { 
-  View, Text, StyleSheet, TouchableOpacity, Alert, 
-  Platform, ScrollView, ActivityIndicator, TextInput 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
 } from "react-native";
-import * as Clipboard from 'expo-clipboard';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-
-const API_URL = 'https://connecti-push-api.vercel.app/api/send-notification';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+import { useRouter } from "expo-router";
+import { Ionicons } from '@expo/vector-icons';
+import { useFriendships } from "../../hooks/useFriendships";
 
 export default function HomeScreen() {
-  const [fcmToken, setFcmToken] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [remoteTitle, setRemoteTitle] = useState('Geofence Alert 📍');
-  const [remoteBody, setRemoteBody] = useState('This works from a killed state!');
+  const router = useRouter();
 
-  useEffect(() => {
-    // Initial Setup
-    const initialize = async () => {
-      await setupNotificationChannels();
-      await getFcmTokenWithRetry();
-      setLoading(false);
-    };
+  // Friendships for badge counts
+  const {
+    friendCount: totalFriends,
+    pendingCount
+  } = useFriendships();
 
-    initialize();
-
-    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      Alert.alert("Notification Tapped", response.notification.request.content.title);
-    });
-
-    return () => Notifications.removeNotificationSubscription(responseListener);
-  }, []);
-
-  async function setupNotificationChannels() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#6366F1',
-      });
+  // Menu Items Configuration
+  const menuItems = [
+    {
+      id: 'ble-test',
+      icon: 'radio',
+      label: 'BLE Detection',
+      color: '#10B981',
+      bgColor: '#D1FAE5',
+      route: '/home/BLETestScreen',
+    },
+    {
+      id: 'notifications',
+      icon: 'notifications',
+      label: 'Notifications',
+      color: '#F59E0B',
+      bgColor: '#FEF3C7',
+      route: '/home/NotificationTestScreen',
+    },
+    {
+      id: 'search',
+      icon: 'person-add',
+      label: 'Add Friends',
+      color: '#8B5CF6',
+      bgColor: '#F5F3FF',
+      route: '/home/SearchScreen',
+    },
+    {
+      id: 'alerts',
+      icon: 'alarm',
+      label: 'Alerts',
+      color: '#EC4899',
+      bgColor: '#FCE7F3',
+      route: '/home/ProximitySettingsScreen',
+    },
+    {
+      id: 'permissions',
+      icon: 'shield-checkmark',
+      label: 'Permissions',
+      color: '#14B8A6',
+      bgColor: '#CCFBF1',
+      route: '/home/PermissionsScreen',
+    },
+    {
+      id: 'settings',
+      icon: 'settings',
+      label: 'Settings',
+      color: '#6B7280',
+      bgColor: '#F3F4F6',
+      route: '/home/SettingsScreen',
     }
-  }
-
-  // 🔥 NEW: Retry logic to fix SERVICE_NOT_AVAILABLE
-  async function getFcmTokenWithRetry(retries = 3, delay = 2000) {
-    if (!Device.isDevice) {
-      console.log("Not a physical device, skipping token fetch.");
-      return;
-    }
-
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') {
-      console.log("Permission not granted");
-      return;
-    }
-
-    for (let i = 0; i < retries; i++) {
-      try {
-        console.log(`Attempting to fetch FCM token (Try ${i + 1})...`);
-        const tokenData = await Notifications.getDevicePushTokenAsync();
-        setFcmToken(tokenData.data);
-        console.log("✅ Success! FCM Token:", tokenData.data);
-        return; // Exit loop on success
-      } catch (e) {
-        console.log(`⚠️ Token fetch attempt ${i + 1} failed:`, e.message);
-        if (i < retries - 1) {
-          setIsRetrying(true);
-          await new Promise(resolve => setTimeout(resolve, delay)); // Wait before next try
-        } else {
-          setIsRetrying(false);
-          console.error("❌ Final attempt failed. Google Play Services might be busy.");
-        }
-      }
-    }
-  }
-
-  async function sendRemoteNotification() {
-    if (!fcmToken) return Alert.alert("Error", "No FCM token available yet.");
-    
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: fcmToken,
-          title: remoteTitle,
-          body: remoteBody,
-        }),
-      });
-      const result = await response.json();
-      if (result.success) Alert.alert("Success", "Check your notifications after closing the app.");
-    } catch (error) {
-      Alert.alert("API Error", error.message);
-    }
-  }
-
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#6366F1" /></View>;
+  ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.header}>FCM v1 Control Panel</Text>
-      
-      <View style={styles.card}>
-        <Text style={styles.label}>Native FCM Token:</Text>
-        {fcmToken ? (
-          <Text style={styles.tokenText}>{fcmToken}</Text>
-        ) : (
-          <Text style={styles.errorText}>{isRetrying ? "Retrying connection to Google..." : "Token unavailable. Try restarting the app."}</Text>
-        )}
-        
-        {fcmToken && (
-          <TouchableOpacity 
-            onPress={() => Clipboard.setStringAsync(fcmToken)}
-            style={styles.copyBtn}
-          >
-            <Text style={styles.copyBtnText}>Copy Token</Text>
-          </TouchableOpacity>
-        )}
-
-        {!fcmToken && !isRetrying && (
-          <TouchableOpacity 
-            onPress={() => getFcmTokenWithRetry()}
-            style={[styles.copyBtn, {marginTop: 10}]}
-          >
-            <Text style={styles.copyBtnText}>Retry Manual Fetch</Text>
-          </TouchableOpacity>
-        )}
+    <ScrollView style={styles.container}>
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <View style={styles.logoContainer}>
+            <View style={styles.logoGradient}>
+              <Ionicons name="radio" size={28} color="#FFF" />
+            </View>
+          </View>
+          <View>
+            <Text style={styles.greeting}>Welcome back</Text>
+            <Text style={styles.appName}>Connecti</Text>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.card}>
-        <TextInput style={styles.input} value={remoteTitle} onChangeText={setRemoteTitle} />
-        <TextInput style={styles.input} value={remoteBody} onChangeText={setRemoteBody} />
-        <TouchableOpacity style={styles.sendBtn} onPress={sendRemoteNotification}>
-          <Text style={styles.sendBtnText}>Send Remote Test</Text>
-        </TouchableOpacity>
+      {/* Menu Grid */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Access</Text>
+        <View style={styles.menuGrid}>
+          {menuItems.map(item => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.menuItem}
+              onPress={() => router.push(item.route)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIconContainer, { backgroundColor: item.bgColor }]}>
+                <Ionicons name={item.icon} size={28} color={item.color} />
+                {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
+                  <View style={[styles.menuBadge, { backgroundColor: item.badgeColor || '#EF4444' }]}>
+                    <Text style={styles.menuBadgeText}>{item.badge}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.menuLabel}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
+
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f4f9' },
-  content: { padding: 20, paddingTop: 60 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
-  card: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginBottom: 20, elevation: 3 },
-  label: { fontWeight: '600', marginBottom: 5 },
-  tokenText: { fontSize: 10, color: '#444', marginBottom: 10, backgroundColor: '#eee', padding: 5 },
-  errorText: { color: 'orange', fontSize: 12, marginBottom: 10 },
-  copyBtn: { backgroundColor: '#eef2ff', padding: 10, borderRadius: 5, alignItems: 'center' },
-  copyBtnText: { color: '#6366f1', fontWeight: 'bold' },
-  input: { borderBottomWidth: 1, borderColor: '#ddd', marginBottom: 15, padding: 8 },
-  sendBtn: { backgroundColor: '#6366f1', padding: 15, borderRadius: 8, alignItems: 'center' },
-  sendBtnText: { color: '#fff', fontWeight: 'bold' }
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 32,
+    backgroundColor: '#FFFFFF',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  logoContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+  logoGradient: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greeting: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginBottom: 4,
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  
+  // Menu Section
+  section: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 16,
+  },
+  menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  menuItem: {
+    width: '31%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  menuIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    position: 'relative',
+  },
+  menuBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  menuBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  menuLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'center',
+  },
 });
