@@ -2,6 +2,7 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "skipDefaultLibCheck": true,
     "baseUrl": ".",                    // needed for path aliases
     "paths": {
       "@/*": ["./*"]                  // maps @/ to project root

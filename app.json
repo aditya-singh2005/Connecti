@@ -8,16 +8,6 @@
     "scheme": "connectiapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.aditya.connectiapp",
-      "infoPlist": {
-        "UIBackgroundModes": ["fetch", "remote-notification"],
-        "NSBluetoothAlwaysUsageDescription": "Connecti needs Bluetooth to detect nearby friends and enable proximity notifications.",
-        "NSBluetoothPeripheralUsageDescription": "Connecti needs Bluetooth to connect with nearby friends and share presence.",
-        "NSUserNotificationsUsageDescription": "We need to send you notifications when you receive messages or friends are nearby via Bluetooth."
-      }
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
@@ -38,7 +28,10 @@
         "FOREGROUND_SERVICE",
         "WAKE_LOCK",
         "VIBRATE",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "web": {
@@ -68,7 +61,10 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["peripheral", "central"],
+          "modes": [
+            "peripheral",
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Allow Connecti to connect to nearby Bluetooth devices to detect your friends."
         }
       ]
@@ -81,6 +77,7 @@
       "eas": {
         "projectId": "9a700934-ca0a-4a5f-b4a5-27c670756c94"
       }
-    }
+    },
+    "owner": "aditya_singh2685"
   }
 }

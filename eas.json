@@ -8,9 +8,11 @@
       "developmentClient": true,
       "distribution": "internal",
       "android": {
+        "buildType": "apk",
         "credentialsSource": "remote"
       },
       "ios": {
+        "simulator": false,
         "resourceClass": "m-medium"
       }
     },
@@ -19,6 +21,10 @@
       "android": {
         "buildType": "apk",
         "credentialsSource": "remote"
+      },
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
       }
     },
     "production": {

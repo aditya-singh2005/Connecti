@@ -45,3 +45,7 @@ app-example
 # Google Service Account Keys
 *-firebase-adminsdk-*.json
 service-account*.json
+
+
+# Firebase Service Account Private Key
+fcm-v1-key.json
