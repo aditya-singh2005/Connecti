@@ -13,10 +13,10 @@
     "lint": "expo lint",
     "eas-build": "eas build -p android --profile preview",
     "eas-build-prod": "eas build -p android --profile production",
-    "prebuild": "expo prebuild --clean",
+    "prebuild": "expo prebuild --clean"
   },
   "dependencies": {
-    "@expo/metro-runtime": "4.0.1",
+    "@expo/metro-runtime": "~4.0.0",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/bottom-tabs": "^7.3.10",
@@ -74,17 +74,5 @@
     "supabase": "^2.53.6",
     "typescript": "~5.9.2"
   },
-  "private": true,
-  "metro": {
-    "resolver": {
-      "sourceExts": [
-        "js",
-        "jsx",
-        "ts",
-        "tsx",
-        "cjs",
-        "mjs"
-      ]
-    }
-  }
+  "private": true
 }
