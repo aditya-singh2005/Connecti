@@ -14,7 +14,6 @@
     "eas-build": "eas build -p android --profile preview",
     "eas-build-prod": "eas build -p android --profile production",
     "prebuild": "expo prebuild --clean",
-    "postinstall": "expo prebuild"
   },
   "dependencies": {
     "@expo/metro-runtime": "4.0.1",
