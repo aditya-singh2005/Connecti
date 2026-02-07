@@ -9,35 +9,69 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "gradleCommand": ":app:assembleDebug",
+        "image": "latest"
       },
       "ios": {
-        "simulator": false,
-        "resourceClass": "m-medium"
+        "simulator": true,
+        "resourceClass": "m-medium",
+        "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENABLE_BACKGROUND": "true"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "gradleCommand": ":app:assembleRelease",
+        "image": "latest",
+        "autoIncrement": true
       },
       "ios": {
         "simulator": false,
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "image": "latest",
+        "autoIncrement": true
+      },
+      "env": {
+        "EXPO_PUBLIC_ENABLE_BACKGROUND": "true",
+        "EXPO_PUBLIC_USE_PROD": "true"
       }
     },
     "production": {
+      "distribution": "store",
+      "autoIncrement": true,
       "android": {
-        "buildType": "apk",
-        "credentialsSource": "remote"
+        "buildType": "app-bundle",
+        "credentialsSource": "remote",
+        "image": "latest"
       },
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "image": "latest",
+        "enterpriseProvisioning": "universal"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENABLE_BACKGROUND": "true",
+        "EXPO_PUBLIC_USE_PROD": "true"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./service-account-key.json",
+        "track": "production"
+      },
+      "ios": {
+        "appleId": "YOUR_APPLE_ID",
+        "ascAppId": "YOUR_APP_ID",
+        "appleTeamId": "YOUR_TEAM_ID"
+      }
+    }
   }
 }

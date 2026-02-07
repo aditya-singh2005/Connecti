@@ -1,297 +1,502 @@
-// app/home/PermissionsScreen.jsx - Honest Status + Settings Guide
-import React, { useState, useEffect } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
+// app/home/PermissionsScreen.jsx - COMPREHENSIVE PERMISSION HANDLER
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
   Alert,
   Linking,
   Platform,
-  PermissionsAndroid,
-  AppState,
-  NativeModules
-} from "react-native";
-import { useRouter } from "expo-router";
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
-
-const { BluetoothAdapter } = NativeModules;
+import * as Notifications from 'expo-notifications';
+import * as IntentLauncher from 'expo-intent-launcher';
 
 export default function PermissionsScreen() {
   const router = useRouter();
-  
-  const [status, setStatus] = useState({
-    bluetooth: false,
-    location: false,
-    notifications: false,
+  const [permissions, setPermissions] = useState({
+    location: 'unknown',
+    backgroundLocation: 'unknown',
+    preciseLocation: 'unknown',
+    notifications: 'unknown',
+    batteryOptimization: 'unknown',
+    autoStart: 'unknown',
   });
 
   useEffect(() => {
-    checkAllStatus();
-    
-    // Real-time status monitoring
-    const interval = setInterval(() => {
-      checkAllStatus();
-    }, 1000);
-
-    // Monitor app state changes
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        checkAllStatus();
-      }
-    });
-
-    return () => {
-      clearInterval(interval);
-      subscription.remove();
-    };
+    checkAllPermissions();
   }, []);
 
-  const checkAllStatus = async () => {
-    const newStatus = {};
-
+  async function checkAllPermissions() {
     try {
-      // BLUETOOTH STATUS - Check both permission AND hardware state
-      if (Platform.OS === 'android') {
-        const androidVersion = Platform.Version;
-        let hasPermission = false;
-        let hardwareEnabled = false;
-
-        // Check permission
-        if (androidVersion >= 31) {
-          const scanGranted = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN
-          );
-          const connectGranted = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
-          );
-          hasPermission = scanGranted && connectGranted;
-        } else {
-          hasPermission = true;
-        }
-
-        // Check hardware state using react-native-bluetooth-state-manager
-        try {
-          const BluetoothStateManager = require('react-native-bluetooth-state-manager').default;
-          const state = await BluetoothStateManager.getState();
-          hardwareEnabled = state === 'PoweredOn';
-        } catch (e) {
-          // Fallback: assume enabled if we can't check
-          hardwareEnabled = hasPermission;
-        }
-
-        newStatus.bluetooth = hasPermission && hardwareEnabled;
-      } else {
-        // iOS - Check hardware state
-        try {
-          const BluetoothStateManager = require('react-native-bluetooth-state-manager').default;
-          const state = await BluetoothStateManager.getState();
-          newStatus.bluetooth = state === 'PoweredOn';
-        } catch (e) {
-          newStatus.bluetooth = true; // Fallback
-        }
-      }
-
-      // LOCATION STATUS - Check both permission AND hardware state
-      if (Platform.OS === 'android') {
-        const locationGranted = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-        );
-        
-        // Check if Location services are enabled
-        const locationEnabled = await Location.hasServicesEnabledAsync();
-        
-        newStatus.location = locationGranted && locationEnabled;
-      } else {
-        const { status: locStatus } = await Location.getForegroundPermissionsAsync();
-        const locationEnabled = await Location.hasServicesEnabledAsync();
-        
-        newStatus.location = locStatus === 'granted' && locationEnabled;
-      }
-
-      // NOTIFICATIONS STATUS
-      const notifStatus = await Notifications.getPermissionsAsync();
-      newStatus.notifications = notifStatus.status === 'granted';
-
-      setStatus(newStatus);
+      // Check location permissions
+      const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+      const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+      
+      // Check notification permission
+      const { status: notifStatus } = await Notifications.getPermissionsAsync();
+      
+      setPermissions({
+        location: fgStatus,
+        backgroundLocation: bgStatus,
+        preciseLocation: fgStatus === 'granted' ? 'granted' : 'denied',
+        notifications: notifStatus,
+        batteryOptimization: 'unknown', // Can't check programmatically
+        autoStart: 'unknown', // Can't check programmatically
+      });
+      
     } catch (error) {
-      console.error('Error checking status:', error);
+      console.error('Permission check error:', error);
     }
-  };
+  }
 
-  const openPermissionSettings = (permissionType) => {
-    let title = '';
-    let message = '';
-
-    switch(permissionType) {
-      case 'bluetooth':
-        title = 'Enable Bluetooth';
-        message = Platform.OS === 'android' 
-          ? '1. Turn ON Bluetooth in Quick Settings or Settings\n2. Go to Settings → Apps → Connecti → Permissions → Enable "Nearby devices"'
-          : '1. Turn ON Bluetooth in Control Center or Settings\n2. Go to Settings → Connecti → Enable Bluetooth';
-        break;
-      case 'location':
-        title = 'Enable Location';
-        message = Platform.OS === 'android'
-          ? '1. Turn ON Location in Quick Settings or Settings\n2. Go to Settings → Apps → Connecti → Permissions → Location → Allow all the time or While using the app'
-          : '1. Turn ON Location Services in Settings → Privacy\n2. Go to Settings → Connecti → Location → While Using the App';
-        break;
-      case 'notifications':
-        title = 'Enable Notifications';
-        message = Platform.OS === 'android'
-          ? 'Go to Settings → Apps → Connecti → Notifications → Enable All notifications'
-          : 'Go to Settings → Connecti → Notifications → Allow Notifications';
-        break;
+  async function requestLocationPermission() {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status === 'granted') {
+        Alert.alert(
+          '✅ Location Permission Granted',
+          'Now we need BACKGROUND location permission for killed-state geofencing.',
+          [
+            {
+              text: 'Grant Background',
+              onPress: () => requestBackgroundPermission(),
+            },
+            { text: 'Later', style: 'cancel' }
+          ]
+        );
+      } else {
+        Alert.alert(
+          '❌ Permission Denied',
+          'Location permission is required for geofencing.',
+          [
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings(),
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+      }
+      
+      await checkAllPermissions();
+    } catch (error) {
+      Alert.alert('Error', error.message);
     }
+  }
 
+  async function requestBackgroundPermission() {
+    try {
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      
+      if (status === 'granted') {
+        Alert.alert(
+          '✅ Background Location Granted!',
+          'Perfect! Now geofencing will work even when the app is closed.\n\n' +
+          'Next, please configure:\n' +
+          '1. Battery Optimization (disable)\n' +
+          '2. Auto-Start (enable)',
+          [{ text: 'Configure Now', onPress: () => openBatterySettings() }]
+        );
+      } else {
+        Alert.alert(
+          '⚠️ Background Location Required',
+          'For killed-state geofencing, you must:\n\n' +
+          '1. Open Settings\n' +
+          '2. Find Connecti app\n' +
+          '3. Location → "Allow all the time"\n' +
+          '4. Enable "Use precise location"',
+          [
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings(),
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+      }
+      
+      await checkAllPermissions();
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    }
+  }
+
+  async function requestNotificationPermission() {
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      
+      if (status === 'granted') {
+        Alert.alert('✅ Notifications Enabled', 'You will receive geofence alerts!');
+      } else {
+        Alert.alert(
+          '❌ Notifications Denied',
+          'You won\'t receive geofence entry alerts.',
+          [
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings(),
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+      }
+      
+      await checkAllPermissions();
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    }
+  }
+
+  function openBatterySettings() {
+    if (Platform.OS === 'android') {
+      Alert.alert(
+        'Battery Optimization Settings',
+        'You will be taken to battery optimization settings.\n\n' +
+        '1. Find "Connecti" in the list\n' +
+        '2. Tap it and select "Don\'t optimize"\n' +
+        '3. This allows geofencing in killed state',
+        [
+          {
+            text: 'Open',
+            onPress: async () => {
+              try {
+                await IntentLauncher.startActivityAsync(
+                  IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                );
+              } catch (error) {
+                // Fallback to general settings
+                Linking.openSettings();
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    }
+  }
+
+  function openAutoStartSettings() {
+    if (Platform.OS === 'android') {
+      Alert.alert(
+        'Auto-Start Settings',
+        'Auto-start allows the app to run in background.\n\n' +
+        'Instructions (varies by manufacturer):\n\n' +
+        '• Xiaomi/Redmi: Security → Permissions → Autostart\n' +
+        '• Samsung: Settings → Apps → Connecti → Battery → Allow background activity\n' +
+        '• Huawei: Settings → Apps → Connecti → Battery → App launch → Manual\n' +
+        '• OnePlus: Settings → Apps → Connecti → Battery → Battery optimization → Don\'t optimize',
+        [
+          {
+            text: 'Open Settings',
+            onPress: () => Linking.openSettings(),
+          },
+          { text: 'OK' }
+        ]
+      );
+    }
+  }
+
+  function openPreciseLocationSettings() {
     Alert.alert(
-      title,
-      message,
+      'Enable Precise Location',
+      'For accurate geofencing:\n\n' +
+      '1. Go to Settings → Apps → Connecti\n' +
+      '2. Tap "Location"\n' +
+      '3. Enable "Use precise location"\n\n' +
+      'This is critical for accurate zone detection!',
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => Linking.openSettings() }
+        {
+          text: 'Open Settings',
+          onPress: () => Linking.openSettings(),
+        },
+        { text: 'OK' }
       ]
     );
-  };
+  }
 
-  const PermissionCard = ({ icon, title, description, isEnabled, onPress, color }) => (
-    <View style={styles.permissionCard}>
-      <View style={[styles.iconCircle, { backgroundColor: `${color}15` }]}>
-        <Ionicons name={icon} size={28} color={color} />
-      </View>
-      
-      <View style={styles.permissionContent}>
-        <Text style={styles.permissionTitle}>{title}</Text>
-        <Text style={styles.permissionDescription}>{description}</Text>
-        
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: isEnabled ? '#10B981' : '#EF4444' }]} />
-          <Text style={[styles.statusText, { color: isEnabled ? '#10B981' : '#EF4444' }]}>
-            {isEnabled ? 'Enabled' : 'Disabled'}
-          </Text>
-        </View>
-      </View>
+  function getPermissionIcon(status) {
+    if (status === 'granted') return 'checkmark-circle';
+    if (status === 'denied') return 'close-circle';
+    return 'help-circle';
+  }
 
-      <TouchableOpacity 
-        style={[styles.actionButton, isEnabled && styles.actionButtonEnabled]}
-        onPress={onPress}
-      >
-        <Ionicons 
-          name={isEnabled ? "checkmark" : "settings-outline"} 
-          size={20} 
-          color={isEnabled ? '#10B981' : '#FFFFFF'} 
-        />
-      </TouchableOpacity>
-    </View>
-  );
+  function getPermissionColor(status) {
+    if (status === 'granted') return '#10B981';
+    if (status === 'denied') return '#EF4444';
+    return '#F59E0B';
+  }
 
-  const allEnabled = status.bluetooth && status.location && status.notifications;
+  const allPermissionsGranted = 
+    permissions.location === 'granted' &&
+    permissions.backgroundLocation === 'granted' &&
+    permissions.notifications === 'granted';
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#1F2937" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Permissions</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.headerTitle}>Permissions Setup</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Status Card */}
-        <View style={styles.statusCard}>
-          <View style={[styles.statusIndicator, { backgroundColor: allEnabled ? '#10B981' : '#F59E0B' }]}>
+      {/* Hero Card */}
+      <View style={[
+        styles.heroCard,
+        allPermissionsGranted && styles.heroCardSuccess
+      ]}>
+        <View style={styles.heroIcon}>
+          <Ionicons 
+            name={allPermissionsGranted ? "shield-checkmark" : "shield-outline"} 
+            size={48} 
+            color={allPermissionsGranted ? "#10B981" : "#14B8A6"} 
+          />
+        </View>
+        <Text style={styles.heroTitle}>
+          {allPermissionsGranted ? "✅ All Set!" : "Permissions Required"}
+        </Text>
+        <Text style={styles.heroSubtitle}>
+          {allPermissionsGranted 
+            ? "All permissions granted. Geofencing will work perfectly!"
+            : "Grant these permissions for full geofencing functionality"
+          }
+        </Text>
+      </View>
+
+      {/* Critical Permissions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Critical Permissions</Text>
+        
+        {/* Location */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={requestLocationPermission}
+        >
+          <View style={styles.permissionIcon}>
             <Ionicons 
-              name={allEnabled ? "checkmark-circle" : "alert-circle"} 
-              size={48} 
-              color="white" 
+              name={getPermissionIcon(permissions.location)} 
+              size={32} 
+              color={getPermissionColor(permissions.location)} 
             />
           </View>
-          <Text style={styles.statusTitle}>
-            {allEnabled ? 'All Set!' : 'Setup Required'}
-          </Text>
-          <Text style={styles.statusDescription}>
-            {allEnabled 
-              ? 'All permissions are enabled. You can detect friends nearby!'
-              : 'Please enable the required permissions below to start detecting friends.'}
-          </Text>
-        </View>
-
-        {/* Info Banner */}
-        <View style={styles.infoBanner}>
-          <Ionicons name="information-circle" size={20} color="#6366F1" />
-          <Text style={styles.infoBannerText}>
-            Tap the settings icon on each card to enable permissions
-          </Text>
-        </View>
-
-        {/* Permissions List */}
-        <View style={styles.permissionsContainer}>
-          <PermissionCard
-            icon="bluetooth"
-            title="Bluetooth"
-            description="Detect friends nearby using Bluetooth"
-            isEnabled={status.bluetooth}
-            onPress={() => openPermissionSettings('bluetooth')}
-            color="#6366F1"
-          />
-
-          <PermissionCard
-            icon="location"
-            title="Location"
-            description="Required for Bluetooth scanning on Android"
-            isEnabled={status.location}
-            onPress={() => openPermissionSettings('location')}
-            color="#EC4899"
-          />
-
-          <PermissionCard
-            icon="notifications"
-            title="Notifications"
-            description="Get alerts when friends are nearby"
-            isEnabled={status.notifications}
-            onPress={() => openPermissionSettings('notifications')}
-            color="#F59E0B"
-          />
-        </View>
-
-        {/* Quick Settings Button */}
-        {!allEnabled && (
-          <TouchableOpacity 
-            style={styles.quickSettingsButton}
-            onPress={() => Linking.openSettings()}
-          >
-            <Ionicons name="settings" size={20} color="#FFFFFF" />
-            <Text style={styles.quickSettingsText}>Open App Settings</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Help Card */}
-        <View style={styles.helpCard}>
-          <Ionicons name="help-circle" size={24} color="#6B7280" />
-          <View style={styles.helpContent}>
-            <Text style={styles.helpTitle}>How to Enable Permissions</Text>
-            <Text style={styles.helpText}>
-              1. Tap the settings icon on any disabled permission{'\n'}
-              2. Follow the instructions to enable in Settings{'\n'}
-              3. Return here to see the updated status
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Location Permission</Text>
+            <Text style={styles.permissionDesc}>
+              Required to detect your position
+            </Text>
+            <Text style={[
+              styles.permissionStatus,
+              { color: getPermissionColor(permissions.location) }
+            ]}>
+              {permissions.location === 'granted' ? '✅ Granted' : '❌ Not Granted'}
             </Text>
           </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        {/* Background Location */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={requestBackgroundPermission}
+        >
+          <View style={styles.permissionIcon}>
+            <Ionicons 
+              name={getPermissionIcon(permissions.backgroundLocation)} 
+              size={32} 
+              color={getPermissionColor(permissions.backgroundLocation)} 
+            />
+          </View>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Background Location</Text>
+            <Text style={styles.permissionDesc}>
+              "Allow all the time" - CRITICAL for killed-state geofencing
+            </Text>
+            <Text style={[
+              styles.permissionStatus,
+              { color: getPermissionColor(permissions.backgroundLocation) }
+            ]}>
+              {permissions.backgroundLocation === 'granted' ? '✅ Granted' : '❌ Required'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        {/* Precise Location */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={openPreciseLocationSettings}
+        >
+          <View style={styles.permissionIcon}>
+            <Ionicons 
+              name="navigate" 
+              size={32} 
+              color="#6366F1" 
+            />
+          </View>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Precise Location</Text>
+            <Text style={styles.permissionDesc}>
+              Enable in Settings for accurate zone detection
+            </Text>
+            <Text style={styles.permissionStatus}>
+              Manual setup required
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        {/* Notifications */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={requestNotificationPermission}
+        >
+          <View style={styles.permissionIcon}>
+            <Ionicons 
+              name={getPermissionIcon(permissions.notifications)} 
+              size={32} 
+              color={getPermissionColor(permissions.notifications)} 
+            />
+          </View>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Notifications</Text>
+            <Text style={styles.permissionDesc}>
+              Receive alerts when entering zones
+            </Text>
+            <Text style={[
+              styles.permissionStatus,
+              { color: getPermissionColor(permissions.notifications) }
+            ]}>
+              {permissions.notifications === 'granted' ? '✅ Granted' : '❌ Not Granted'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Device-Specific Settings */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Device-Specific Settings</Text>
+        
+        {/* Battery Optimization */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={openBatterySettings}
+        >
+          <View style={styles.permissionIcon}>
+            <Ionicons name="battery-charging" size={32} color="#F59E0B" />
+          </View>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Battery Optimization</Text>
+            <Text style={styles.permissionDesc}>
+              Disable for Connecti to allow background operation
+            </Text>
+            <Text style={styles.permissionStatus}>
+              Tap to configure
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        {/* Auto-Start */}
+        <TouchableOpacity 
+          style={styles.permissionCard}
+          onPress={openAutoStartSettings}
+        >
+          <View style={styles.permissionIcon}>
+            <Ionicons name="power" size={32} color="#8B5CF6" />
+          </View>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionTitle}>Auto-Start Permission</Text>
+            <Text style={styles.permissionDesc}>
+              Allow app to run in background (Xiaomi, Huawei, OnePlus)
+            </Text>
+            <Text style={styles.permissionStatus}>
+              Tap for instructions
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Setup Guide */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="information-circle" size={20} color="#6366F1" />
+          <Text style={styles.cardTitle}>Complete Setup Guide</Text>
         </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </View>
+        <View style={styles.step}>
+          <Text style={styles.stepNumber}>1</Text>
+          <Text style={styles.stepText}>
+            Grant Location and Background Location permissions above
+          </Text>
+        </View>
+
+        <View style={styles.step}>
+          <Text style={styles.stepNumber}>2</Text>
+          <Text style={styles.stepText}>
+            Enable "Use precise location" in Settings → Apps → Connecti → Location
+          </Text>
+        </View>
+
+        <View style={styles.step}>
+          <Text style={styles.stepNumber}>3</Text>
+          <Text style={styles.stepText}>
+            Disable battery optimization for Connecti
+          </Text>
+        </View>
+
+        <View style={styles.step}>
+          <Text style={styles.stepNumber}>4</Text>
+          <Text style={styles.stepText}>
+            Enable auto-start (if your device manufacturer requires it)
+          </Text>
+        </View>
+
+        <View style={styles.step}>
+          <Text style={styles.stepNumber}>5</Text>
+          <Text style={styles.stepText}>
+            Grant notification permission for alerts
+          </Text>
+        </View>
+      </View>
+
+      {/* Test Button */}
+      {allPermissionsGranted && (
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.testButton}
+            onPress={() => {
+              Alert.alert(
+                '✅ Ready to Test!',
+                'All critical permissions granted.\n\n' +
+                'Go to Geofencing screen to start monitoring zones.',
+                [
+                  {
+                    text: 'Go to Geofencing',
+                    onPress: () => router.push('/home/GeofenceTestScreen')
+                  },
+                  { text: 'Later' }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="rocket" size={24} color="#FFF" />
+            <Text style={styles.testButtonText}>Test Geofencing</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 
@@ -302,190 +507,169 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
-  backButton: {
+  backBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1F2937',
+    color: '#111827',
   },
-  placeholder: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  statusCard: {
-    backgroundColor: '#FFFFFF',
-    margin: 20,
-    padding: 32,
-    borderRadius: 24,
+  heroCard: {
+    backgroundColor: '#F0FDFA',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 20,
+    padding: 24,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#99F6E4',
   },
-  statusIndicator: {
+  heroCardSuccess: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#86EFAC',
+  },
+  heroIcon: {
     width: 80,
     height: 80,
     borderRadius: 40,
+    backgroundColor: '#CCFBF1',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
-  statusTitle: {
+  heroTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1F2937',
+    color: '#065F46',
     marginBottom: 8,
   },
-  statusDescription: {
-    fontSize: 15,
-    color: '#6B7280',
+  heroSubtitle: {
+    fontSize: 14,
+    color: '#047857',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
   },
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 12,
-    gap: 8,
+  section: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
   },
-  infoBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#4F46E5',
-    lineHeight: 18,
-  },
-  permissionsContainer: {
-    paddingHorizontal: 20,
-    gap: 12,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
   },
   permissionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 20,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
   },
-  iconCircle: {
+  permissionIcon: {
     width: 56,
     height: 56,
     borderRadius: 28,
+    backgroundColor: '#F9FAFB',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 12,
   },
-  permissionContent: {
+  permissionInfo: {
     flex: 1,
   },
   permissionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
     marginBottom: 4,
   },
-  permissionDescription: {
-    fontSize: 14,
+  permissionDesc: {
+    fontSize: 12,
     color: '#6B7280',
-    lineHeight: 20,
-    marginBottom: 8,
+    lineHeight: 16,
+    marginBottom: 6,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
+  permissionStatus: {
     fontSize: 13,
     fontWeight: '600',
+    color: '#F59E0B',
   },
-  actionButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#6366F1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonEnabled: {
-    backgroundColor: '#D1FAE5',
-  },
-  quickSettingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366F1',
-    marginHorizontal: 20,
-    marginTop: 20,
-    padding: 16,
-    borderRadius: 16,
-    gap: 8,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  quickSettingsText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  helpCard: {
-    flexDirection: 'row',
+  card: {
     backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginTop: 20,
-    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  helpContent: {
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EEF2FF',
+    color: '#6366F1',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 28,
+    marginRight: 12,
+  },
+  stepText: {
     flex: 1,
-    marginLeft: 12,
-  },
-  helpTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 8,
-  },
-  helpText: {
-    fontSize: 13,
-    color: '#6B7280',
+    fontSize: 14,
+    color: '#374151',
     lineHeight: 20,
+  },
+  testButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  testButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

@@ -1,9 +1,10 @@
-// hooks/useChatNotifications.jsx - Updated with Expo Push Token
+// hooks/useChatNotifications.jsx - USING FCM DEVICE TOKENS
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from '../lib/supabase';
+import ExpoPushTokenService from '../services/ExpoPushTokenService';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -19,31 +20,38 @@ export function useChatNotifications() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [expoPushToken, setExpoPushToken] = useState(null);
+  const [fcmDeviceToken, setFcmDeviceToken] = useState(null);
   const subscriptionRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
   const currentScreenRef = useRef(null);
   const isInitializedRef = useRef(false);
 
-  // Register for Expo Push Notifications and get token
+  // Register for Push Notifications and get FCM Device Token
   const registerForPushNotificationsAsync = async () => {
-    let token;
+    try {
+      // Setup notification channel first
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('chat-messages', {
+          name: '💬 Chat Messages',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#1E88E5',
+          sound: 'default',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        });
+        console.log('✅ Chat notification channel created');
+      }
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('chat-messages', {
-        name: '💬 Chat Messages',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#1E88E5',
-        sound: 'default',
-        enableLights: true,
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      });
-    }
+      // Check if physical device
+      if (!Device.isDevice) {
+        console.log('⚠️ Emulator detected - push notifications not available');
+        return null;
+      }
 
-    if (Device.isDevice) {
+      // Check/request permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       
@@ -57,43 +65,66 @@ export function useChatNotifications() {
         return null;
       }
 
-      // Get Expo Push Token
-      token = (await Notifications.getExpoPushTokenAsync({
-        projectId: '9a700934-ca0a-4a5f-b4a5-27c670756c94', // Get from app.json
-      })).data;
-      
-      console.log('✅ Expo Push Token:', token);
-      setExpoPushToken(token);
+      console.log('✅ Notification permissions granted');
       setHasPermissions(true);
+
+      // Get FCM Device Token (NOT Expo Push Token!)
+      console.log('🔑 Fetching FCM Device Token...');
+      const token = await ExpoPushTokenService.getToken();
       
-      return token;
-    } else {
-      console.log('⚠️ Must use physical device for Push Notifications');
+      if (token) {
+        console.log('✅ FCM Device Token obtained successfully');
+        console.log(`📝 Token preview: ${token.substring(0, 50)}...`);
+        setFcmDeviceToken(token);
+        return token;
+      } else {
+        console.log('⚠️ FCM Device Token not available');
+        return null;
+      }
+
+    } catch (error) {
+      console.log('⚠️ Push token error:', error.message);
       return null;
     }
   };
 
   // Save token to Supabase
   const saveTokenToDatabase = async (token) => {
-    if (!userId || !token) return;
+    if (!userId) {
+      console.log('⚠️ No user ID, cannot save token');
+      return;
+    }
 
     try {
+      const updateData = {
+        chat_notifications_enabled: true
+      };
+
+      if (token) {
+        updateData.fcm_token = token; // Changed from expo_push_token to fcm_token
+        console.log('💾 Saving FCM Device Token to database...');
+      } else {
+        console.log('💾 Enabling notifications without token...');
+      }
+
       const { error } = await supabase
         .from('profiles')
-        .update({ 
-          expo_push_token: token,
-          chat_notifications_enabled: true 
-        })
+        .update(updateData)
         .eq('id', userId);
 
       if (error) throw error;
-      console.log('✅ Push token saved to database');
+      
+      if (token) {
+        console.log('✅ FCM Device Token saved to database');
+      } else {
+        console.log('✅ Chat notifications enabled (local only)');
+      }
     } catch (error) {
-      console.error('❌ Error saving token:', error);
+      console.error('❌ Error saving to database:', error.message);
     }
   };
 
-  // Get current user - only once
+  // Get current user
   useEffect(() => {
     if (userId) return;
 
@@ -105,14 +136,14 @@ export function useChatNotifications() {
           console.log('✅ User ID set:', user.id);
         }
       } catch (error) {
-        console.error('❌ Error getting current user:', error);
+        console.error('❌ Error getting current user:', error.message);
       }
     };
 
     getCurrentUser();
   }, []);
 
-  // Setup realtime subscription for new messages (for foreground updates)
+  // Setup realtime subscription for new messages
   const setupMessageSubscription = useCallback(() => {
     if (!userId || subscriptionRef.current) return;
 
@@ -141,7 +172,6 @@ export function useChatNotifications() {
           });
           
           // Only show local notification if in foreground and NOT on chat screen
-          // Background notifications are handled by Edge Function
           if (!isBackground && !isOnChatScreen) {
             await sendLocalNotification(newMessage);
           }
@@ -153,7 +183,7 @@ export function useChatNotifications() {
 
   }, [userId]);
 
-  // Send local notification (only for foreground)
+  // Send local notification
   const sendLocalNotification = async (message) => {
     try {
       const { data: senderProfile } = await supabase
@@ -181,11 +211,14 @@ export function useChatNotifications() {
             screen: 'ChatConversationScreen',
           },
           sound: 'default',
+          channelId: 'chat-messages',
         },
         trigger: null,
       });
+      
+      console.log('✅ Local notification sent');
     } catch (error) {
-      console.error('❌ Error sending local notification:', error);
+      console.error('❌ Error sending local notification:', error.message);
     }
   };
 
@@ -203,7 +236,7 @@ export function useChatNotifications() {
       await Notifications.setBadgeCountAsync(count || 0);
       console.log('🔢 Badge count updated:', count || 0);
     } catch (error) {
-      console.error('❌ Error updating badge:', error);
+      console.error('❌ Error updating badge:', error.message);
     }
   }, [userId]);
 
@@ -213,7 +246,7 @@ export function useChatNotifications() {
       await Notifications.setBadgeCountAsync(0);
       console.log('🧹 Badge cleared');
     } catch (error) {
-      console.error('❌ Error clearing badge:', error);
+      console.error('❌ Error clearing badge:', error.message);
     }
   }, []);
 
@@ -248,17 +281,8 @@ export function useChatNotifications() {
     });
 
     return () => {
-      try {
-        Notifications.removeNotificationSubscription(receivedSubscription);
-      } catch (e) {
-        console.log('Cleanup: received subscription');
-      }
-      
-      try {
-        Notifications.removeNotificationSubscription(responseSubscription);
-      } catch (e) {
-        console.log('Cleanup: response subscription');
-      }
+      receivedSubscription?.remove();
+      responseSubscription?.remove();
     };
   }, []);
 
@@ -272,25 +296,37 @@ export function useChatNotifications() {
 
       console.log('🔄 Enabling chat notifications...');
 
-      // Get Expo push token
+      // Get FCM Device Token
       const token = await registerForPushNotificationsAsync();
-      if (!token) {
-        console.log('❌ Failed to get push token');
-        return false;
-      }
-
-      // Save token to database
+      
+      // Save to database
       await saveTokenToDatabase(token);
 
       // Setup realtime subscription
       setupMessageSubscription();
       
       setIsEnabled(true);
-      console.log('✅ Chat notifications enabled');
+      
+      if (token) {
+        console.log('✅ Chat notifications enabled with FCM Device Token');
+      } else {
+        console.log('✅ Chat notifications enabled (local only)');
+      }
+      
       return true;
     } catch (error) {
-      console.error('❌ Error enabling notifications:', error);
-      return false;
+      console.error('❌ Error enabling notifications:', error.message);
+      
+      // Still enable local notifications
+      try {
+        setupMessageSubscription();
+        setIsEnabled(true);
+        console.log('✅ Chat notifications enabled in fallback mode');
+        return true;
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError.message);
+        return false;
+      }
     }
   }, [userId, setupMessageSubscription]);
 
@@ -305,7 +341,6 @@ export function useChatNotifications() {
       }
 
       if (userId) {
-        // Don't remove token, just disable notifications
         await supabase
           .from('profiles')
           .update({ chat_notifications_enabled: false })
@@ -316,7 +351,7 @@ export function useChatNotifications() {
       console.log('✅ Chat notifications disabled');
       return true;
     } catch (error) {
-      console.error('❌ Error disabling notifications:', error);
+      console.error('❌ Error disabling notifications:', error.message);
       return false;
     }
   }, [userId]);
@@ -333,7 +368,7 @@ export function useChatNotifications() {
     console.log('📍 Current screen cleared');
   }, []);
 
-  // Auto-enable notifications on mount - only once
+  // Auto-enable notifications on mount
   useEffect(() => {
     if (!userId || isInitializedRef.current) return;
 
@@ -343,16 +378,29 @@ export function useChatNotifications() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('chat_notifications_enabled, expo_push_token')
+          .select('chat_notifications_enabled, fcm_token')
           .eq('id', userId)
           .single();
 
-        // Always re-register to get latest token
+        console.log('📊 Profile preferences:', {
+          enabled: profile?.chat_notifications_enabled,
+          hasToken: !!profile?.fcm_token
+        });
+
+        // Always re-register to ensure notifications work
         await enableChatNotifications();
         
         isInitializedRef.current = true;
       } catch (error) {
-        console.error('❌ Error checking preferences:', error);
+        console.error('❌ Error checking preferences:', error.message);
+        
+        // Try to enable anyway
+        try {
+          await enableChatNotifications();
+          isInitializedRef.current = true;
+        } catch (retryError) {
+          console.error('❌ Retry failed:', retryError.message);
+        }
       }
     };
 
@@ -368,7 +416,7 @@ export function useChatNotifications() {
           subscriptionRef.current = null;
           console.log('🧹 Subscription cleaned up');
         } catch (e) {
-          console.log('Cleanup: subscription');
+          // Ignore cleanup errors
         }
       }
     };
@@ -378,7 +426,7 @@ export function useChatNotifications() {
     isEnabled,
     hasPermissions,
     userId,
-    expoPushToken,
+    fcmDeviceToken, // Changed from expoPushToken
     enableChatNotifications,
     disableChatNotifications,
     setCurrentScreen,

@@ -279,6 +279,14 @@ export default function HomeLayout() {
         }}
       />
       
+      {/* 🗺️ HIDE GeofenceTestScreen from navbar */}
+      <Tabs.Screen
+        name="GeofenceTestScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
       
     </Tabs>
   );
