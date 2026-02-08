@@ -101,7 +101,7 @@ export function useChatNotifications() {
       };
 
       if (token) {
-        updateData.fcm_token = token; // Changed from expo_push_token to fcm_token
+        updateData.expo_push_token = token; // Changed from expo_push_token to fcm_token
         console.log('💾 Saving FCM Device Token to database...');
       } else {
         console.log('💾 Enabling notifications without token...');
@@ -384,7 +384,7 @@ export function useChatNotifications() {
 
         console.log('📊 Profile preferences:', {
           enabled: profile?.chat_notifications_enabled,
-          hasToken: !!profile?.fcm_token
+          hasToken: !!profile?.expo_push_token
         });
 
         // Always re-register to ensure notifications work

@@ -1,38 +1,22 @@
-// services/GeofenceNativeBridge.js
+// services/GeofenceNativeBridge.js - Native Android Bridge
 import { NativeModules, Platform } from 'react-native';
 
 const { GeofenceNative } = NativeModules;
 
-/**
- * JavaScript bridge to native geofencing module
- * Provides simple API for React Native to use native geofencing
- */
-
 class GeofenceNativeBridge {
   
-  /**
-   * Check if native module is available
-   */
   isAvailable() {
     return Platform.OS === 'android' && GeofenceNative != null;
   }
 
-  /**
-   * Register geofences with native Android system
-   * These will persist and trigger even when app is killed
-   * 
-   * @param {Array} geofences - Array of geofence objects
-   * @returns {Promise<Object>} Result with success status
-   */
   async registerGeofences(geofences) {
     if (!this.isAvailable()) {
-      throw new Error('Native geofencing not available on this platform');
+      throw new Error('Native geofencing not available');
     }
 
     try {
       console.log('📍 Registering native geofences:', geofences.length);
       
-      // Convert to format expected by native module
       const nativeGeofences = geofences.map(g => ({
         identifier: g.identifier,
         latitude: g.latitude,
@@ -43,18 +27,15 @@ class GeofenceNativeBridge {
       const geofencesJson = JSON.stringify(nativeGeofences);
       const result = await GeofenceNative.registerGeofences(geofencesJson);
       
-      console.log('✅ Native geofences registered:', result);
+      console.log('✅ Native geofences registered');
       return result;
       
     } catch (error) {
-      console.error('❌ Failed to register native geofences:', error);
+      console.error('❌ Native registration failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Unregister all geofences
-   */
   async unregisterGeofences() {
     if (!this.isAvailable()) {
       throw new Error('Native geofencing not available');
@@ -67,15 +48,11 @@ class GeofenceNativeBridge {
       return result;
       
     } catch (error) {
-      console.error('❌ Failed to unregister:', error);
+      console.error('❌ Unregister failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Get events that were stored by native code while app was killed
-   * @returns {Promise<Array>} Array of event objects
-   */
   async getStoredEvents() {
     if (!this.isAvailable()) {
       return [];
@@ -89,14 +66,11 @@ class GeofenceNativeBridge {
       return events;
       
     } catch (error) {
-      console.error('❌ Failed to get stored events:', error);
+      console.error('❌ Failed to get events:', error);
       return [];
     }
   }
 
-  /**
-   * Clear stored events from native storage
-   */
   async clearStoredEvents() {
     if (!this.isAvailable()) {
       return true;
@@ -108,14 +82,27 @@ class GeofenceNativeBridge {
       return true;
       
     } catch (error) {
-      console.error('❌ Failed to clear events:', error);
+      console.error('❌ Clear failed:', error);
       return false;
     }
   }
 
-  /**
-   * Check if location permissions are granted
-   */
+  async storeFCMToken(token) {
+    if (!this.isAvailable()) {
+      return false;
+    }
+
+    try {
+      await GeofenceNative.storeFCMToken(token);
+      console.log('✅ FCM token stored in native');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Token storage failed:', error);
+      return false;
+    }
+  }
+
   async hasLocationPermissions() {
     if (!this.isAvailable()) {
       return false;
@@ -124,14 +111,11 @@ class GeofenceNativeBridge {
     try {
       return await GeofenceNative.hasLocationPermissions();
     } catch (error) {
-      console.error('❌ Failed to check permissions:', error);
+      console.error('❌ Permission check failed:', error);
       return false;
     }
   }
 
-  /**
-   * Get status of native geofencing system
-   */
   async getStatus() {
     if (!this.isAvailable()) {
       return {
@@ -141,19 +125,11 @@ class GeofenceNativeBridge {
     }
 
     try {
-      const hasPermissions = await this.hasLocationPermissions();
-      const storedEvents = await this.getStoredEvents();
-      
-      return {
-        available: true,
-        platform: 'android',
-        hasPermissions,
-        storedEventsCount: storedEvents.length,
-        nativeModuleVersion: '1.0.0',
-      };
+      const status = await GeofenceNative.getStatus();
+      return status;
       
     } catch (error) {
-      console.error('❌ Failed to get status:', error);
+      console.error('❌ Status check failed:', error);
       return {
         available: true,
         error: error.message,

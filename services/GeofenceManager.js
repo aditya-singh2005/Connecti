@@ -1,4 +1,4 @@
-// services/GeofenceManager.js - UPDATED FOR FCM DEVICE TOKENS
+// services/GeofenceManager.js - FIXED: Single notifications + Better detection
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -8,13 +8,12 @@ import { Platform } from 'react-native';
 export const GEOFENCE_TASK_NAME = 'CONNECTI_GEOFENCE_TASK';
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const FCM_DEVICE_TOKEN_KEY = 'fcm_device_token';
-const API_URL = 'https://connecti-push-api.vercel.app/api/send-notification';
+const CURRENT_ZONE_KEY = 'current_zone';
 
-// Store FCM Device Token for background use
 export async function storeFCMToken(token) {
   try {
     await AsyncStorage.setItem(FCM_DEVICE_TOKEN_KEY, token);
-    console.log('✅ FCM Device Token stored for geofencing');
+    console.log('✅ FCM Token stored');
     return true;
   } catch (error) {
     console.error('❌ Failed to store token:', error);
@@ -22,34 +21,32 @@ export async function storeFCMToken(token) {
   }
 }
 
-// Get FCM Device Token
 export async function getFCMToken() {
   try {
-    const token = await AsyncStorage.getItem(FCM_DEVICE_TOKEN_KEY);
-    return token;
+    return await AsyncStorage.getItem(FCM_DEVICE_TOKEN_KEY);
   } catch (error) {
     return null;
   }
 }
 
-// Setup notification channels
 export async function setupGeofenceNotificationChannels() {
   if (Platform.OS === 'android') {
     try {
       await Notifications.setNotificationChannelAsync('geofence-alerts', {
-        name: 'Geofence Zone Alerts',
-        description: 'High priority notifications when you enter monitored zones',
+        name: 'Zone Alerts',
+        description: 'Notifications when entering zones',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF0000',
+        lightColor: '#10B981',
         sound: 'default',
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: true,
         enableVibrate: true,
         enableLights: true,
+        priority: 'max',
       });
       
-      console.log('✅ Geofence notification channel ready');
+      console.log('✅ Notification channel ready');
       return true;
     } catch (error) {
       console.warn('⚠️ Channel setup warning:', error.message);
@@ -59,87 +56,39 @@ export async function setupGeofenceNotificationChannels() {
   return true;
 }
 
-// Send local notification (ALWAYS works)
-async function sendLocalNotification(zoneName, timestamp) {
+// ✅ FIXED: Single notification function (no duplicates)
+async function sendSingleNotification(zoneName, distance, timestamp) {
   try {
-    console.log(`📢 Sending local notification for: ${zoneName}`);
+    console.log(`📢 Sending SINGLE notification: ${zoneName}`);
     
-    await Notifications.scheduleNotificationAsync({
+    const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🎯 Zone Entered!',
-        body: `You entered ${zoneName}`,
+        title: `🎯 Entered ${zoneName}!`,
+        body: `You're ${distance}m from center`,
         data: {
           type: 'geofence_entry',
           zone: zoneName,
           timestamp: timestamp,
-          appKilled: true,
-          source: 'local',
+          distance: distance,
+          source: 'background_task',
         },
         sound: true,
         priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 250, 250, 250],
+        vibrate: [0, 300, 200, 300],
         badge: 1,
         channelId: 'geofence-alerts',
       },
       trigger: null,
     });
     
-    console.log('✅ Local notification sent successfully');
+    console.log(`✅ Notification sent! ID: ${notificationId}`);
     return true;
   } catch (error) {
-    console.error('❌ Local notification failed:', error.message);
+    console.error('❌ Notification failed:', error.message);
     return false;
   }
 }
 
-// Send remote notification via FCM API
-async function sendRemoteNotification(zoneName, timestamp) {
-  try {
-    const fcmDeviceToken = await getFCMToken();
-    
-    if (!fcmDeviceToken) {
-      console.log('ℹ️ No FCM Device Token available, skipping remote notification');
-      return false;
-    }
-    
-    console.log('📡 Sending remote notification via FCM...');
-    
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        token: fcmDeviceToken,
-        title: '🎯 Zone Entered!',
-        body: `You entered ${zoneName} (Remote)`,
-        data: {
-          type: 'geofence_entry',
-          zone: zoneName,
-          timestamp: timestamp,
-          appKilled: true,
-          source: 'fcm_remote',
-        }
-      }),
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      console.log('✅ Remote notification sent via FCM');
-      return true;
-    } else {
-      console.log('⚠️ FCM API returned error:', result.message);
-      return false;
-    }
-    
-  } catch (error) {
-    console.log('⚠️ Remote notification failed:', error.message);
-    return false;
-  }
-}
-
-// Store geofence event
 async function storeGeofenceEvent(eventData) {
   try {
     const storedEvents = await AsyncStorage.getItem(GEOFENCE_EVENTS_KEY);
@@ -147,7 +96,6 @@ async function storeGeofenceEvent(eventData) {
     
     eventsList.push(eventData);
     
-    // Keep only last 100 events
     const trimmedEvents = eventsList.slice(-100);
     await AsyncStorage.setItem(GEOFENCE_EVENTS_KEY, JSON.stringify(trimmedEvents));
     
@@ -159,13 +107,12 @@ async function storeGeofenceEvent(eventData) {
   }
 }
 
-// Define the Background Task
 TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
   const timestamp = new Date().toISOString();
   
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`[BG TASK ${new Date().toLocaleTimeString()}] 🎯 Geofence event triggered`);
-  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`[BG TASK ${new Date().toLocaleTimeString()}] 🎯 GEOFENCE EVENT`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
   if (error) {
     console.error(`[BG TASK] ❌ Error: ${error.message}`);
@@ -178,66 +125,57 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
   }
 
   const { eventType, region } = data;
-  console.log(`[BG TASK] Event Type: ${eventType === Location.GeofencingEventType.Enter ? 'ENTER' : 'EXIT'}`);
-  console.log(`[BG TASK] Zone: ${region.identifier}`);
+  
+  console.log('[BG TASK] Event Details:');
+  console.log(`  Type: ${eventType}`);
+  console.log(`  Zone: ${region?.identifier}`);
+  console.log(`  Coords: ${region?.latitude}, ${region?.longitude}`);
+  
+  const isEnter = eventType === Location.GeofencingEventType.Enter;
+  
+  console.log(`  Action: ${isEnter ? 'ENTER ✅' : 'EXIT ❌'}`);
 
-  if (eventType === Location.GeofencingEventType.Enter) {
+  if (isEnter) {
     const zoneName = region.identifier;
     
+    console.log(`\n[BG TASK] 🎯 ZONE ENTRY: ${zoneName}\n`);
+    
     try {
-      // 1. Store event first
+      await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
+      
       const eventData = {
         type: 'enter',
         zone: zoneName,
         timestamp: timestamp,
         lat: region.latitude,
         lng: region.longitude,
-        bgTask: true,
-        appKilled: true,
+        appState: 'killed',
+        source: 'background_task',
         notificationSent: false,
       };
       
       await storeGeofenceEvent(eventData);
       
-      // 2. Send LOCAL notification (primary method)
-      const localSent = await sendLocalNotification(zoneName, timestamp);
+      // ✅ FIXED: Send ONLY ONE notification
+      const notificationSent = await sendSingleNotification(zoneName, 0, timestamp);
       
-      if (localSent) {
-        console.log(`[BG TASK] ✅ LOCAL notification delivered for: ${zoneName}`);
-      } else {
-        console.log(`[BG TASK] ⚠️ LOCAL notification failed for: ${zoneName}`);
-      }
+      eventData.notificationSent = notificationSent;
       
-      // 3. Send REMOTE notification via FCM (backup method)
-      const remoteSent = await sendRemoteNotification(zoneName, timestamp);
-      
-      if (remoteSent) {
-        console.log(`[BG TASK] ✅ REMOTE FCM notification delivered for: ${zoneName}`);
-      } else {
-        console.log(`[BG TASK] ℹ️ REMOTE notification skipped (no token or error)`);
-      }
-      
-      // Update event with notification status
-      eventData.notificationSent = localSent || remoteSent;
-      
-      console.log(`\n[BG TASK] ✅ Zone entry processed successfully!`);
-      console.log(`[BG TASK] Zone: ${zoneName}`);
-      console.log(`[BG TASK] Local Notification: ${localSent ? '✅' : '❌'}`);
-      console.log(`[BG TASK] Remote FCM Notification: ${remoteSent ? '✅' : '❌'}`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      console.log(`\n[BG TASK] Results:`);
+      console.log(`  Zone: ${zoneName}`);
+      console.log(`  Notification: ${notificationSent ? '✅' : '❌'}`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
       
     } catch (taskError) {
-      console.error(`[BG TASK] ❌ Failed to process event:`, taskError.message);
-      console.error(`[BG TASK] Stack:`, taskError.stack);
+      console.error('[BG TASK] ❌ Task error:', taskError.message);
     }
-  } else if (eventType === Location.GeofencingEventType.Exit) {
-    console.log(`[BG TASK] 📤 Exited zone: ${region.identifier}`);
+  } else {
+    console.log(`[BG TASK] EXIT ignored`);
   }
 });
 
-// Initialize channels on module load
 if (Platform.OS === 'android') {
   setupGeofenceNotificationChannels();
 }
 
-console.log('✅ GeofenceManager loaded - Dual notification system (Local + FCM Remote)');
+console.log('✅ GeofenceManager loaded');
