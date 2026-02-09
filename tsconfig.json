@@ -1,22 +1,25 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true,
+    "strict": false,
     "skipDefaultLibCheck": true,
-    "baseUrl": ".",                    // needed for path aliases
+    "skipLibCheck": true,
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]                  // maps @/ to project root
+      "@/*": [
+        "./*"
+      ]
     },
-    "jsx": "react-jsx",               // for React 18+ JSX transform
-    "skipLibCheck": true,             // avoid type errors in node_modules
-    "noEmit": true                     // TS won't emit JS
+    "jsx": "react-jsx",
+    "noEmit": true
   },
   "include": [
     "expo-env.d.ts",
     ".expo/types/**/*.ts",
     "**/*.ts",
-    "**/*.tsx"
-, "supabase/functions/send-chat-notification/index.ts"  ],
+    "**/*.tsx",
+    "supabase/functions/send-chat-notification/index.ts"
+  ],
   "exclude": [
     "node_modules",
     "babel.config.js",

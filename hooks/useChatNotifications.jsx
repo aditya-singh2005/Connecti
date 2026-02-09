@@ -33,7 +33,7 @@ export function useChatNotifications() {
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('chat-messages', {
           name: '💬 Chat Messages',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance.HIGH, // MAX deprecated
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#1E88E5',
           sound: 'default',
@@ -54,12 +54,12 @@ export function useChatNotifications() {
       // Check/request permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
-      
+
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
-      
+
       if (finalStatus !== 'granted') {
         console.log('❌ Notification permission not granted');
         return null;
@@ -71,7 +71,7 @@ export function useChatNotifications() {
       // Get FCM Device Token (NOT Expo Push Token!)
       console.log('🔑 Fetching FCM Device Token...');
       const token = await ExpoPushTokenService.getToken();
-      
+
       if (token) {
         console.log('✅ FCM Device Token obtained successfully');
         console.log(`📝 Token preview: ${token.substring(0, 50)}...`);
@@ -113,7 +113,7 @@ export function useChatNotifications() {
         .eq('id', userId);
 
       if (error) throw error;
-      
+
       if (token) {
         console.log('✅ FCM Device Token saved to database');
       } else {
@@ -161,16 +161,16 @@ export function useChatNotifications() {
         },
         async (payload) => {
           const newMessage = payload.new;
-          
+
           const isBackground = appStateRef.current.match(/inactive|background/);
           const isOnChatScreen = currentScreenRef.current === `chat-${newMessage.sender_id}`;
-          
+
           console.log('📨 New message received via realtime:', {
             isBackground,
             isOnChatScreen,
             senderId: newMessage.sender_id
           });
-          
+
           // Only show local notification if in foreground and NOT on chat screen
           if (!isBackground && !isOnChatScreen) {
             await sendLocalNotification(newMessage);
@@ -192,18 +192,18 @@ export function useChatNotifications() {
         .eq('id', message.sender_id)
         .single();
 
-      const senderName = senderProfile?.name?.trim().split(' ')[0] || 
-                        senderProfile?.username || 'Someone';
-      
-      const messagePreview = message.content.length > 100 
-        ? message.content.substring(0, 97) + '...' 
+      const senderName = senderProfile?.name?.trim().split(' ')[0] ||
+        senderProfile?.username || 'Someone';
+
+      const messagePreview = message.content.length > 100
+        ? message.content.substring(0, 97) + '...'
         : message.content;
 
       await Notifications.scheduleNotificationAsync({
         content: {
           title: `💬 ${senderName}`,
           body: messagePreview,
-          data: { 
+          data: {
             type: 'chat_message',
             senderId: message.sender_id,
             senderName: senderProfile?.name || senderProfile?.username,
@@ -215,7 +215,7 @@ export function useChatNotifications() {
         },
         trigger: null,
       });
-      
+
       console.log('✅ Local notification sent');
     } catch (error) {
       console.error('❌ Error sending local notification:', error.message);
@@ -255,9 +255,9 @@ export function useChatNotifications() {
     const subscription = AppState.addEventListener('change', nextAppState => {
       const prevState = appStateRef.current;
       appStateRef.current = nextAppState;
-      
+
       console.log('📱 App state changed:', prevState, '→', nextAppState);
-      
+
       if (nextAppState === 'active') {
         clearBadge();
         updateBadgeCount();
@@ -298,25 +298,25 @@ export function useChatNotifications() {
 
       // Get FCM Device Token
       const token = await registerForPushNotificationsAsync();
-      
+
       // Save to database
       await saveTokenToDatabase(token);
 
       // Setup realtime subscription
       setupMessageSubscription();
-      
+
       setIsEnabled(true);
-      
+
       if (token) {
         console.log('✅ Chat notifications enabled with FCM Device Token');
       } else {
         console.log('✅ Chat notifications enabled (local only)');
       }
-      
+
       return true;
     } catch (error) {
       console.error('❌ Error enabling notifications:', error.message);
-      
+
       // Still enable local notifications
       try {
         setupMessageSubscription();
@@ -389,11 +389,11 @@ export function useChatNotifications() {
 
         // Always re-register to ensure notifications work
         await enableChatNotifications();
-        
+
         isInitializedRef.current = true;
       } catch (error) {
         console.error('❌ Error checking preferences:', error.message);
-        
+
         // Try to enable anyway
         try {
           await enableChatNotifications();

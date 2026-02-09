@@ -1,11 +1,12 @@
 // app/home/HomeScreen.jsx - FIXED VERSION
 import React, { useEffect, useState } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +15,7 @@ import { useGeofenceService } from "../../hooks/useGeofenceService";
 
 export default function HomeScreen() {
   const router = useRouter();
-  
+
   // Friendships for badge counts
   const {
     friendCount: totalFriends,
@@ -22,8 +23,8 @@ export default function HomeScreen() {
   } = useFriendships();
 
   // Geofencing status
-  const { 
-    isGeofencingActive, 
+  const {
+    isGeofencingActive,
     activeGeofences,
     recentEvents,
     nativeSupport, // ✅ Check native support
@@ -46,13 +47,13 @@ export default function HomeScreen() {
     if (recentEvents && recentEvents.length > 0) {
       // Count events from last hour
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      const recentCount = recentEvents.filter(event => 
+      const recentCount = recentEvents.filter(event =>
         new Date(event.timestamp) > oneHourAgo
       ).length;
       setGeofenceBadge(recentCount);
-      
+
       // Count killed app events
-      const killedCount = recentEvents.filter(event => 
+      const killedCount = recentEvents.filter(event =>
         event.appKilled === true
       ).length;
       setKilledEvents(killedCount);
@@ -128,17 +129,17 @@ export default function HomeScreen() {
 
   // Status card component
   const StatusCard = () => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.statusCard}
       onPress={() => router.push('/home/GeofenceTestScreen')}
       activeOpacity={0.8}
     >
       <View style={styles.statusContent}>
         <View style={styles.statusIconContainer}>
-          <Ionicons 
-            name={isGeofencingActive ? "checkmark-circle" : "pause-circle"} 
-            size={24} 
-            color={isGeofencingActive ? "#10B981" : "#9CA3AF"} 
+          <Ionicons
+            name={isGeofencingActive ? "checkmark-circle" : "pause-circle"}
+            size={24}
+            color={isGeofencingActive ? "#10B981" : "#9CA3AF"}
           />
         </View>
         <View style={styles.statusTextContainer}>
@@ -146,7 +147,7 @@ export default function HomeScreen() {
             {isGeofencingActive ? "✅ Zone Monitoring Active" : "📍 Geofencing Inactive"}
           </Text>
           <Text style={styles.statusSubtitle}>
-            {isGeofencingActive 
+            {isGeofencingActive
               ? `Monitoring ${activeGeofences.length} zones • ${nativeSupport ? 'Native support enabled' : 'Native support disabled'}`
               : "Tap to start monitoring zones (works when app is closed)"
             }
@@ -167,10 +168,13 @@ export default function HomeScreen() {
       {/* Modern Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
+          {/* CHANGED: Using actual app logo image instead of icon */}
           <View style={styles.logoContainer}>
-            <View style={styles.logoGradient}>
-              <Ionicons name="radio" size={28} color="#FFF" />
-            </View>
+            <Image
+              source={require('../../assets/images/icon.png')}
+              style={styles.logo}
+              resizeMode="cover"
+            />
           </View>
           <View>
             <Text style={styles.greeting}>Welcome back</Text>
@@ -260,18 +264,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
   },
+  // CHANGED: Updated logo styles to accommodate the image
   logoContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 72,
+    height: 72,
+    borderRadius: 40,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0,height: 2},
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
     overflow: 'hidden',
+    transform: [{ scale: 1.10}],
   },
-  logoGradient: {
+  logo: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#6366F1',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   greeting: {
     fontSize: 14,
@@ -283,7 +292,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
-  
+
   // Status Section
   statusSection: {
     paddingHorizontal: 16,
@@ -334,7 +343,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-  
+
   // Menu Section
   section: {
     paddingHorizontal: 16,
@@ -396,7 +405,7 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'center',
   },
-  
+
   // Tips Section
   tipsSection: {
     backgroundColor: '#FFFBEB',

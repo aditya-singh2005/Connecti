@@ -1,8 +1,8 @@
 // app/home/NotificationTestScreen.jsx - FCM DEVICE TOKENS
 import React, { useState, useEffect } from "react";
-import { 
-  View, Text, StyleSheet, TouchableOpacity, Alert, 
-  Platform, ScrollView, ActivityIndicator, TextInput 
+import {
+  View, Text, StyleSheet, TouchableOpacity, Alert,
+  Platform, ScrollView, ActivityIndicator, TextInput
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
@@ -37,18 +37,18 @@ export default function NotificationTestScreen() {
 
     const initialize = async () => {
       if (!mounted) return;
-      
+
       // Setup notification channels
       await setupNotificationChannels();
       setLocalNotificationsReady(true);
-      
+
       // Get FCM Device Token
       await getFCMDeviceToken();
-      
+
       // Get token status
       const status = await ExpoPushTokenService.getStatus();
       setTokenStatus(status);
-      
+
       if (mounted) {
         setLoading(false);
       }
@@ -72,14 +72,14 @@ export default function NotificationTestScreen() {
       try {
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Default',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance.HIGH, // MAX deprecated
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#6366F1',
         });
 
         await Notifications.setNotificationChannelAsync('geofence-killed-alerts', {
           name: 'Geofence Alerts',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance.HIGH, // MAX deprecated
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF0000',
           sound: 'default',
@@ -107,33 +107,33 @@ export default function NotificationTestScreen() {
       }
 
       console.log('🔑 Fetching FCM Device Token...');
-      
+
       // Get FCM Device Token (NOT Expo Push Token!)
       const token = await ExpoPushTokenService.getToken();
-      
+
       if (token) {
         setFcmDeviceToken(token);
-        
+
         // Store for geofencing
         const stored = await storeFCMToken(token);
         setTokenStoredForGeofencing(stored);
-        
+
         console.log('✅ FCM Device Token obtained and stored');
-        
+
         // Update status
         const status = await ExpoPushTokenService.getStatus();
         setTokenStatus(status);
       } else {
         console.log('⚠️ FCM Device Token not available');
-        
+
         // Update status
         const status = await ExpoPushTokenService.getStatus();
         setTokenStatus(status);
       }
-      
+
     } catch (error) {
       console.log('⚠️ FCM Device Token error:', error.message);
-      
+
       // Update status
       const status = await ExpoPushTokenService.getStatus();
       setTokenStatus(status);
@@ -144,15 +144,15 @@ export default function NotificationTestScreen() {
     try {
       console.log('🔄 Force retrying FCM Device Token...');
       const token = await ExpoPushTokenService.forceRetry();
-      
+
       if (token) {
         setFcmDeviceToken(token);
         const stored = await storeFCMToken(token);
         setTokenStoredForGeofencing(stored);
-        
+
         const status = await ExpoPushTokenService.getStatus();
         setTokenStatus(status);
-        
+
         Alert.alert('✅ Success!', 'FCM Device Token obtained successfully!');
       } else {
         Alert.alert('⚠️ Failed', 'Could not get FCM Device Token. Check Google Play Services.');
@@ -173,7 +173,7 @@ export default function NotificationTestScreen() {
         },
         trigger: null,
       });
-      
+
       Alert.alert("✅ Success", "Local notification sent! Close app to see it.");
     } catch (error) {
       Alert.alert("Error", error.message);
@@ -183,13 +183,13 @@ export default function NotificationTestScreen() {
   async function sendRemoteNotification() {
     if (!fcmDeviceToken) {
       Alert.alert(
-        "No FCM Device Token", 
+        "No FCM Device Token",
         "Remote notifications require FCM Device Token from Google Play Services.\n\n" +
         "Try the 'Force Retry' button."
       );
       return;
     }
-    
+
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -201,7 +201,7 @@ export default function NotificationTestScreen() {
         }),
       });
       const result = await response.json();
-      
+
       if (result.success) {
         Alert.alert("Success ✅", "Remote notification sent! Close the app to see it.");
       } else {
@@ -218,7 +218,7 @@ export default function NotificationTestScreen() {
       await sendLocalNotification();
       return;
     }
-    
+
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -235,11 +235,11 @@ export default function NotificationTestScreen() {
           }
         }),
       });
-      
+
       const result = await response.json();
       if (result.success) {
         Alert.alert(
-          "✅ Test Sent!", 
+          "✅ Test Sent!",
           "Close app completely to see the notification."
         );
       }
@@ -275,7 +275,7 @@ export default function NotificationTestScreen() {
         </View>
         <Text style={styles.heroTitle}>Push Notifications</Text>
         <Text style={styles.heroSubtitle}>
-          {localNotificationsReady 
+          {localNotificationsReady
             ? "Local notifications ready • Remote notifications " + (fcmDeviceToken ? "ready" : "pending")
             : "Setting up notification system..."
           }
@@ -288,29 +288,29 @@ export default function NotificationTestScreen() {
           <Ionicons name="information-circle" size={20} color="#F59E0B" />
           <Text style={styles.cardTitle}>System Status</Text>
         </View>
-        
+
         <View style={styles.statusGrid}>
           <View style={styles.statusItem}>
             <Text style={styles.statusLabel}>Local Notifications</Text>
             <View style={styles.statusBadge}>
-              <Ionicons 
-                name="checkmark-circle" 
-                size={16} 
-                color="#10B981" 
+              <Ionicons
+                name="checkmark-circle"
+                size={16}
+                color="#10B981"
               />
               <Text style={[styles.statusValue, { color: '#10B981' }]}>
                 Ready
               </Text>
             </View>
           </View>
-          
+
           <View style={styles.statusItem}>
             <Text style={styles.statusLabel}>FCM Device Token</Text>
             <View style={styles.statusBadge}>
-              <Ionicons 
-                name={fcmDeviceToken ? "checkmark-circle" : "alert-circle"} 
-                size={16} 
-                color={fcmDeviceToken ? "#10B981" : "#F59E0B"} 
+              <Ionicons
+                name={fcmDeviceToken ? "checkmark-circle" : "alert-circle"}
+                size={16}
+                color={fcmDeviceToken ? "#10B981" : "#F59E0B"}
               />
               <Text style={[
                 styles.statusValue,
@@ -320,14 +320,14 @@ export default function NotificationTestScreen() {
               </Text>
             </View>
           </View>
-          
+
           <View style={styles.statusItem}>
             <Text style={styles.statusLabel}>Stored for Geofencing</Text>
             <View style={styles.statusBadge}>
-              <Ionicons 
-                name={tokenStoredForGeofencing ? "checkmark-circle" : "close-circle"} 
-                size={16} 
-                color={tokenStoredForGeofencing ? "#10B981" : "#9CA3AF"} 
+              <Ionicons
+                name={tokenStoredForGeofencing ? "checkmark-circle" : "close-circle"}
+                size={16}
+                color={tokenStoredForGeofencing ? "#10B981" : "#9CA3AF"}
               />
               <Text style={[
                 styles.statusValue,
@@ -337,14 +337,14 @@ export default function NotificationTestScreen() {
               </Text>
             </View>
           </View>
-          
+
           <View style={styles.statusItem}>
             <Text style={styles.statusLabel}>Device Type</Text>
             <View style={styles.statusBadge}>
-              <Ionicons 
-                name={Device.isDevice ? "checkmark-circle" : "alert-circle"} 
-                size={16} 
-                color={Device.isDevice ? "#10B981" : "#F59E0B"} 
+              <Ionicons
+                name={Device.isDevice ? "checkmark-circle" : "alert-circle"}
+                size={16}
+                color={Device.isDevice ? "#10B981" : "#F59E0B"}
               />
               <Text style={styles.statusValue}>
                 {Device.isDevice ? 'Physical' : 'Emulator'}
@@ -361,22 +361,22 @@ export default function NotificationTestScreen() {
             <Ionicons name="bug" size={20} color="#6366F1" />
             <Text style={styles.cardTitle}>Debug Info</Text>
           </View>
-          
+
           <View style={styles.debugBox}>
             <Text style={styles.debugLabel}>Has Token:</Text>
             <Text style={styles.debugValue}>{tokenStatus.hasToken ? 'Yes' : 'No'}</Text>
           </View>
-          
+
           <View style={styles.debugBox}>
             <Text style={styles.debugLabel}>Cached Token:</Text>
             <Text style={styles.debugValue}>{tokenStatus.hasCachedToken ? 'Yes' : 'No'}</Text>
           </View>
-          
+
           <View style={styles.debugBox}>
             <Text style={styles.debugLabel}>Token Type:</Text>
             <Text style={styles.debugValue}>{tokenStatus.tokenType}</Text>
           </View>
-          
+
           <View style={styles.debugBox}>
             <Text style={styles.debugLabel}>Platform:</Text>
             <Text style={styles.debugValue}>{tokenStatus.platform}</Text>
@@ -391,14 +391,14 @@ export default function NotificationTestScreen() {
             <Ionicons name="key" size={20} color="#10B981" />
             <Text style={styles.cardTitle}>FCM Device Token</Text>
           </View>
-          
+
           <View style={styles.tokenContainer}>
             <Text style={styles.tokenText} numberOfLines={3}>
               {fcmDeviceToken}
             </Text>
           </View>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             onPress={() => {
               Clipboard.setStringAsync(fcmDeviceToken);
               Alert.alert("Copied! 📋", "Token copied to clipboard");
@@ -418,20 +418,20 @@ export default function NotificationTestScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.warningTitle}>FCM Device Token Not Available</Text>
             <Text style={styles.warningText}>
-              {!Device.isDevice 
+              {!Device.isDevice
                 ? "You're using an emulator. FCM Device Tokens require a physical device with Google Play Services."
                 : "Could not get FCM Device Token.\n\n" +
-                  "This might be due to:\n" +
-                  "• Google Play Services not available/updating\n" +
-                  "• Device just booted (wait 2-5 minutes)\n" +
-                  "• Network connectivity issues\n" +
-                  "• Invalid google-services.json configuration\n\n" +
-                  "Try the 'Force Retry' button below."
+                "This might be due to:\n" +
+                "• Google Play Services not available/updating\n" +
+                "• Device just booted (wait 2-5 minutes)\n" +
+                "• Network connectivity issues\n" +
+                "• Invalid google-services.json configuration\n\n" +
+                "Try the 'Force Retry' button below."
               }
             </Text>
-            
+
             {Device.isDevice && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={handleForceRetry}
                 style={[styles.button, { marginTop: 12, backgroundColor: '#F59E0B', borderColor: '#F59E0B' }]}
               >
@@ -451,10 +451,10 @@ export default function NotificationTestScreen() {
           <Ionicons name="flask" size={20} color="#F59E0B" />
           <Text style={styles.cardTitle}>Test Notifications</Text>
         </View>
-        
+
         {/* Local Notification Test */}
-        <TouchableOpacity 
-          style={[styles.button, styles.localButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.localButton]}
           onPress={sendLocalNotification}
         >
           <Ionicons name="notifications" size={20} color="#FFF" />
@@ -462,26 +462,26 @@ export default function NotificationTestScreen() {
             Send Local Notification
           </Text>
         </TouchableOpacity>
-        
+
         {/* Remote Notification Test */}
         {fcmDeviceToken && (
           <>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Title</Text>
-              <TextInput 
-                style={styles.input} 
-                value={remoteTitle} 
+              <TextInput
+                style={styles.input}
+                value={remoteTitle}
                 onChangeText={setRemoteTitle}
                 placeholder="Notification title"
                 placeholderTextColor="#9CA3AF"
               />
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Message</Text>
-              <TextInput 
-                style={[styles.input, styles.textArea]} 
-                value={remoteBody} 
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={remoteBody}
                 onChangeText={setRemoteBody}
                 placeholder="Notification body"
                 placeholderTextColor="#9CA3AF"
@@ -489,9 +489,9 @@ export default function NotificationTestScreen() {
                 numberOfLines={3}
               />
             </View>
-            
-            <TouchableOpacity 
-              style={[styles.button, styles.remoteButton]} 
+
+            <TouchableOpacity
+              style={[styles.button, styles.remoteButton]}
               onPress={sendRemoteNotification}
             >
               <Ionicons name="paper-plane" size={20} color="#FFF" />
@@ -499,9 +499,9 @@ export default function NotificationTestScreen() {
                 Send Remote Notification
               </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.button, styles.geofenceButton]} 
+
+            <TouchableOpacity
+              style={[styles.button, styles.geofenceButton]}
               onPress={sendGeofenceTestNotification}
             >
               <Ionicons name="location" size={20} color="#FFF" />
@@ -511,11 +511,11 @@ export default function NotificationTestScreen() {
             </TouchableOpacity>
           </>
         )}
-        
+
         <View style={styles.infoBox}>
           <Ionicons name="information-circle" size={16} color="#6B7280" />
           <Text style={styles.infoText}>
-            {fcmDeviceToken 
+            {fcmDeviceToken
               ? "✅ FCM Device Tokens work with Google Play Services!\nClose app completely to test background notifications."
               : "Local notifications work without token. Remote needs FCM Device Token from Google Play Services."
             }

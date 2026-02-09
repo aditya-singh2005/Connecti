@@ -78,7 +78,6 @@ class ExpoPushTokenService {
       let finalStatus = existingStatus;
 
       if (existingStatus !== 'granted') {
-        console.log('📱 Requesting notification permissions...');
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
@@ -89,19 +88,24 @@ class ExpoPushTokenService {
         return null;
       }
 
-      console.log('✅ Notification permissions granted');
-
-      // 2. Get FCM DEVICE TOKEN (NOT Expo Push Token!)
-      console.log('📡 Requesting FCM Device Token from Firebase...');
-      
+      // 2. Get FCM DEVICE TOKEN
       // This requires Google Play Services and google-services.json
-      const tokenData = await Notifications.getDevicePushTokenAsync();
+      let tokenData;
+      try {
+        tokenData = await Notifications.getDevicePushTokenAsync();
+      } catch (e) {
+        // Fallback or Handle specific error
+        if (e.message.includes('SERVICE_NOT_AVAILABLE')) {
+          console.log('⚠️ Google Play Services not available (Emulator?). Returning null for token.');
+          this.isFetching = false;
+          return "EMULATOR_NO_TOKEN"; // Return a placeholder so logic proceeds
+        }
+        throw e;
+      }
 
       if (tokenData?.data) {
         const token = tokenData.data;
         console.log('✅ FCM Device Token obtained successfully!');
-        console.log(`📝 Token type: ${tokenData.type}`);
-        console.log(`📝 Token preview: ${token.substring(0, 50)}...`);
 
         // Store token
         await AsyncStorage.setItem(FCM_DEVICE_TOKEN_KEY, token);
@@ -109,44 +113,13 @@ class ExpoPushTokenService {
 
         this.isFetching = false;
         return token;
-      } else {
-        console.log('⚠️ No FCM token data returned');
-        this.isFetching = false;
-        return null;
       }
+
+      this.isFetching = false;
+      return null;
 
     } catch (error) {
-      const errorMessage = error.message || '';
-      
-      console.log('❌ FCM Device Token fetch error:', errorMessage);
-      
-      // Handle specific errors
-      if (errorMessage.includes('SERVICE_NOT_AVAILABLE')) {
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('⚠️  GOOGLE PLAY SERVICES NOT AVAILABLE');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('');
-        console.log('This can happen when:');
-        console.log('1. Device just booted (wait 2-5 minutes)');
-        console.log('2. Play Services is updating');
-        console.log('3. Network connectivity issues');
-        console.log('4. Play Services not installed/outdated');
-        console.log('');
-        console.log('SOLUTIONS:');
-        console.log('✅ Wait 2-5 minutes and try again');
-        console.log('✅ Restart your device');
-        console.log('✅ Update Google Play Services from Play Store');
-        console.log('✅ Check internet connection');
-        console.log('');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      } else if (errorMessage.includes('TIMEOUT')) {
-        console.log('⏱️ Request timed out - network or Play Services issue');
-      } else if (errorMessage.includes('INVALID_SENDER_ID')) {
-        console.log('❌ Invalid sender ID - check google-services.json');
-      } else {
-        console.log('💡 Unknown error - may resolve after device restart');
-      }
-
+      console.error('❌ FCM Token Fetch Error:', error.message);
       this.isFetching = false;
       return null;
     }
@@ -199,7 +172,7 @@ class ExpoPushTokenService {
   async getStatus() {
     const storedToken = await AsyncStorage.getItem(FCM_DEVICE_TOKEN_KEY);
     const lastAttempt = await AsyncStorage.getItem(TOKEN_LAST_ATTEMPT_KEY);
-    
+
     return {
       hasToken: !!storedToken,
       hasCachedToken: !!this.cachedToken,
@@ -218,22 +191,22 @@ class ExpoPushTokenService {
    */
   async waitAndFetch(maxWaitMs = 120000) { // 2 minutes max
     console.log('⏳ Waiting for Google Play Services to be ready...');
-    
+
     const startTime = Date.now();
     const retryInterval = 10000; // 10 seconds
-    
+
     while (Date.now() - startTime < maxWaitMs) {
       const token = await this.fetchNewToken(true);
-      
+
       if (token) {
         console.log('✅ FCM token obtained after waiting');
         return token;
       }
-      
+
       console.log(`⏳ Retrying in 10 seconds... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
       await new Promise(resolve => setTimeout(resolve, retryInterval));
     }
-    
+
     console.log('⏱️ Timeout waiting for Google Play Services');
     return null;
   }

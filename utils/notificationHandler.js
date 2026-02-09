@@ -23,7 +23,7 @@ export async function registerForPushNotificationsAsync() {
     // Set up Android notification channel
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
+      importance: Notifications.AndroidImportance.HIGH, // MAX deprecated
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
       sound: 'default',
@@ -48,7 +48,7 @@ export async function registerForPushNotificationsAsync() {
 
     // Get the Expo Push Token
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    
+
     if (!projectId) {
       throw new Error('Project ID not found in app.json');
     }

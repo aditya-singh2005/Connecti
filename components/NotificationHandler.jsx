@@ -5,10 +5,13 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthProvider';
+import { useRouter } from 'expo-router';
 import FCMTokenService from '../services/FCMTokenService';
+import { WaveService } from '../services/WaveService';
 
 export default function NotificationHandler() {
   const { user } = useAuth();
+  const router = useRouter();
   const notificationListener = useRef();
   const responseListener = useRef();
   const appState = useRef(AppState.currentState);
@@ -49,18 +52,97 @@ export default function NotificationHandler() {
 
   async function setupNotifications() {
     console.log('🔍 Setting up notifications...');
-    
+
     try {
       // Setup notification channels first
       await setupNotificationChannels();
-      
+
+      // ✅ Check for expired wave timer on app startup
+      await WaveService.checkAndResumeTimer();
+
+      // ✅ Register Category: GEOFENCE_MATCH (Wave / Later)
+      if (Platform.OS !== 'web') {
+        await Notifications.setNotificationCategoryAsync('GEOFENCE_MATCH', [
+          {
+            identifier: 'WAVE',
+            buttonTitle: 'Wave 👋',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'LATER',
+            buttonTitle: 'Later',
+            options: {
+              isDestructive: true,
+              // opensAppToForeground: false (default), just dismisses
+            },
+          },
+        ]);
+        console.log('✅ Registered Category: GEOFENCE_MATCH');
+      }
+
       // Set up notification listeners
       notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
         console.log('📨 Notification received:', notification.request.content.title);
       });
 
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        console.log('👆 Notification tapped:', response.notification.request.content.title);
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
+        const actionId = response.actionIdentifier;
+        const data = response.notification.request.content.data;
+        const notificationId = response.notification.request.identifier;
+        console.log('👆 Notification tapped:', actionId, data);
+
+        // Helper: Dismiss notification and collapse panel
+        const dismissAndCollapse = async () => {
+          try {
+            await Notifications.dismissNotificationAsync(notificationId);
+            console.log('✅ Notification dismissed');
+          } catch (e) {
+            console.warn('⚠️ Could not dismiss notification:', e.message);
+          }
+
+          if (Platform.OS === 'android') {
+            try {
+              const { NativeModules } = require('react-native');
+              if (NativeModules.StatusBarManager?.collapsePanels) {
+                NativeModules.StatusBarManager.collapsePanels();
+                console.log('✅ Collapsed notification panel');
+              }
+            } catch (e) {
+              console.warn('⚠️ Could not collapse panel:', e.message);
+            }
+          }
+        };
+
+        // ✅ HANDLE INTERACTIVE ACTIONS
+        if (actionId === 'WAVE') {
+          console.log('🌊 WAVE ACTION DETECTED -> Navigating to /home/HomeScreen');
+
+          // ✅ Set open_to_wave = true in database
+          if (user?.id) {
+            const zoneName = data?.zoneId || 'Unknown Zone';
+            await WaveService.setOpenToWave(user.id, zoneName);
+          }
+
+          await dismissAndCollapse();
+          // Navigate after dismissal
+          setTimeout(() => {
+            router.replace('/home/HomeScreen');
+          }, 100);
+        }
+        else if (actionId === 'LATER') {
+          console.log('👋 LATER clicked - Notification dismissed');
+          await dismissAndCollapse();
+        }
+        else if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          // User tapped the body of the notification, not a button
+          console.log('👆 Notification Body Tapped -> Navigating to /home/HomeScreen');
+          await dismissAndCollapse();
+          setTimeout(() => {
+            router.replace('/home/HomeScreen');
+          }, 100);
+        }
       });
 
       // Check if chat notifications are enabled
@@ -87,7 +169,7 @@ export default function NotificationHandler() {
       try {
         await Notifications.setNotificationChannelAsync('geofence-alerts', {
           name: 'Geofence Zone Alerts',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance.HIGH, // MAX deprecated
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF0000',
           sound: 'default',
@@ -116,14 +198,14 @@ export default function NotificationHandler() {
     try {
       // Get FCM Device Token using the correct service
       const token = await FCMTokenService.getToken();
-      
+
       if (token) {
         // Store in database
         await supabase
           .from('profiles')
-          .update({ 
+          .update({
             fcm_token: token,
-            chat_notifications_enabled: true 
+            chat_notifications_enabled: true
           })
           .eq('id', user.id);
 
@@ -132,7 +214,7 @@ export default function NotificationHandler() {
       } else {
         console.log('⚠️ FCM token not available');
         console.log('💡 Scheduling retry in 60 seconds...');
-        
+
         // Schedule retry
         scheduleRetry();
       }
@@ -158,15 +240,15 @@ export default function NotificationHandler() {
   async function retryFCMToken() {
     try {
       const token = await FCMTokenService.forceRetry();
-      
+
       if (token) {
         await supabase
           .from('profiles')
           .update({ fcm_token: token })
           .eq('id', user.id);
-        
+
         console.log('✅ FCM token obtained on retry!');
-        
+
         // Clear retry timeout
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
