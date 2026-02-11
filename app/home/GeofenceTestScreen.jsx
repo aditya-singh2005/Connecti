@@ -233,10 +233,10 @@ export default function GeofenceTestScreen() {
 
           <View style={styles.statCard}>
             <View style={styles.statContent}>
-              <Ionicons 
-                name={osTaskStatus ? "checkmark-circle" : "close-circle"} 
-                size={20} 
-                color={osTaskStatus ? '#10B981' : '#EF4444'} 
+              <Ionicons
+                name={osTaskStatus ? "checkmark-circle" : "close-circle"}
+                size={20}
+                color={osTaskStatus ? '#10B981' : '#EF4444'}
               />
               <Text style={[styles.statValue, { color: osTaskStatus ? '#10B981' : '#EF4444' }]}>
                 {osTaskStatus ? '✓' : '✗'}
@@ -310,7 +310,7 @@ export default function GeofenceTestScreen() {
           )}
         </View>
 
-        {/* Recent Events */}
+        {/* Recent Events (MOVED UP) */}
         {recentEvents.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -343,13 +343,13 @@ export default function GeofenceTestScreen() {
                     </Text>
                   </View>
                   <View style={[
-                    styles.eventBadge, 
+                    styles.eventBadge,
                     event.notificationSent && styles.eventBadgeActive
                   ]}>
-                    <Ionicons 
-                      name={event.notificationSent ? "checkmark" : "remove"} 
-                      size={11} 
-                      color={event.notificationSent ? '#10B981' : '#94A3B8'} 
+                    <Ionicons
+                      name={event.notificationSent ? "checkmark" : "remove"}
+                      size={11}
+                      color={event.notificationSent ? '#10B981' : '#94A3B8'}
                     />
                   </View>
                 </View>
@@ -358,7 +358,29 @@ export default function GeofenceTestScreen() {
           </View>
         )}
 
-        {/* Monitored Zones */}
+        {/* Database Presence Info (NEW) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="sync-outline" size={18} color="#10B981" />
+            <Text style={styles.sectionTitle}>Real-time Presence</Text>
+          </View>
+          <View style={styles.guideCard}>
+            <View style={styles.statusRow}>
+              <Ionicons
+                name={currentZone ? "globe-outline" : "cloud-offline-outline"}
+                size={20}
+                color={currentZone ? "#10B981" : "#94A3B8"}
+              />
+              <Text style={styles.guideText}>
+                {currentZone
+                  ? `Synced: Active in ${currentZone}`
+                  : "Standby: No active zone presence"}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Monitored Zones (MOVED DOWN) */}
         {zonesWithDistances.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>

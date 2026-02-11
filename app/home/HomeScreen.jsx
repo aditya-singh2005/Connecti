@@ -27,20 +27,27 @@ export default function HomeScreen() {
     isGeofencingActive,
     activeGeofences,
     recentEvents,
-    nativeSupport, // ✅ Check native support
-    loadRecentEvents, // ✅ Use this instead of checkAndAutoRestart
+    nativeSupport,
+    loadRecentEvents,
+    startGeofencing, // ✅ Import start function
   } = useGeofenceService();
 
   const [geofenceBadge, setGeofenceBadge] = useState(0);
   const [killedEvents, setKilledEvents] = useState(0);
 
-  // ✅ FIXED: Load events on mount (no checkAndAutoRestart)
+  // ✅ FIXED: Auto-start geofencing on mount
   useEffect(() => {
     const init = async () => {
       await loadRecentEvents();
+
+      // 🚀 Explicit Auto-Start
+      if (!isGeofencingActive) {
+        console.log('[HomeScreen] 🚀 Auto-starting geofencing...');
+        startGeofencing();
+      }
     };
     init();
-  }, []);
+  }, []); // Run once on mount
 
   // Update badge based on recent events
   useEffect(() => {
@@ -271,12 +278,12 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: '#FFFFFF',
     shadowColor: '#6366F1',
-    shadowOffset: { width: 0,height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
     overflow: 'hidden',
-    transform: [{ scale: 1.10}],
+    transform: [{ scale: 1.10 }],
   },
   logo: {
     width: '100%',

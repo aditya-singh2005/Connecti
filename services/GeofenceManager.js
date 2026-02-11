@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { sendGeofenceTrigger } from './api';
+import { WaveService } from './WaveService';
 
 // ⚠️ CRITICAL: Set the handler globally so it handles notifications even when app is in background/foreground
 Notifications.setNotificationHandler({
@@ -130,6 +131,21 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 
   if (eventType === Location.GeofencingEventType.Exit) {
     console.log(`[BG] 🚪 Exited ${zoneName}`);
+
+    // ✅ Cleanup active_zone_users
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('active_zone_users')
+          .delete()
+          .eq('user_id', user.id);
+        console.log(`[BG] 🌐 Cleared active_zone_users for ${zoneName}`);
+      }
+    } catch (dbError) {
+      console.warn('[BG] ⚠️ Database cleanup failed:', dbError.message);
+    }
+
     return;
   }
 
@@ -143,6 +159,19 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 
     try {
       await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
+
+      // ✅ Sync with Supabase via WaveService
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await WaveService.syncUserZone(user.id, zoneName, {
+            latitude: region.latitude,
+            longitude: region.longitude
+          });
+        }
+      } catch (dbError) {
+        console.warn('[BG] ⚠️ Presence sync failed:', dbError.message);
+      }
 
       const eventData = {
         type: 'enter',

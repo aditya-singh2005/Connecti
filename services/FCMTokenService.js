@@ -90,34 +90,40 @@ class FCMTokenService {
 
       console.log('✅ Notification permissions granted');
 
-      // 2. Get FCM DEVICE TOKEN
-      // This requires Google Play Services and google-services.json
-      let tokenData;
+      // 2. Get BOTH tokens
+      console.log('📡 Requesting push tokens...');
+      let fcmToken = null;
+      let expoToken = null;
+
       try {
-        console.log('📡 Requesting FCM Device Token from Firebase...');
-        tokenData = await Notifications.getDevicePushTokenAsync();
+        console.log('📡 Fetching Native FCM Token...');
+        const fcmData = await Notifications.getDevicePushTokenAsync();
+        fcmToken = fcmData.data;
       } catch (e) {
-        // Fallback or Handle specific error
-        if (e.message.includes('SERVICE_NOT_AVAILABLE')) {
-          console.log('⚠️ Google Play Services not available (Emulator?). Returning null for token.');
-          this.isFetching = false;
-          return "EMULATOR_NO_TOKEN"; // Return a placeholder
-        }
-        throw e;
+        console.log('⚠️ Native FCM Token error:', e.message);
       }
 
-      if (tokenData?.data) {
-        const token = tokenData.data;
-        console.log('✅ FCM Device Token obtained successfully!');
+      try {
+        console.log('📡 Fetching Expo Push Token...');
+        const expoData = await Notifications.getExpoPushTokenAsync({
+          projectId: '9a700934-ca0a-4a5f-b4a5-27c670756c94' // From app.json
+        });
+        expoToken = expoData.data;
+      } catch (e) {
+        console.log('⚠️ Expo Push Token error:', e.message);
+      }
 
-        // Store token
-        await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
-        this.cachedToken = token;
+      if (fcmToken || expoToken) {
+        console.log('✅ Tokens obtained successfully!');
+
+        const tokens = { fcmToken, expoToken };
+        await AsyncStorage.setItem(FCM_TOKEN_KEY, JSON.stringify(tokens));
+        this.cachedToken = tokens;
 
         this.isFetching = false;
-        return token;
+        return tokens;
       } else {
-        console.log('⚠️ No FCM token data returned');
+        console.log('⚠️ No tokens returned');
         this.isFetching = false;
         return null;
       }

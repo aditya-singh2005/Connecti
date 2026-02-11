@@ -60,8 +60,9 @@ export default function NotificationHandler() {
       // ✅ Check for expired wave timer on app startup
       await WaveService.checkAndResumeTimer();
 
-      // ✅ Register Category: GEOFENCE_MATCH (Wave / Later)
+      // ✅ Register Categories
       if (Platform.OS !== 'web') {
+        // 1. Zone Entry Notification (First Notification)
         await Notifications.setNotificationCategoryAsync('GEOFENCE_MATCH', [
           {
             identifier: 'WAVE',
@@ -75,11 +76,28 @@ export default function NotificationHandler() {
             buttonTitle: 'Later',
             options: {
               isDestructive: true,
-              // opensAppToForeground: false (default), just dismisses
             },
           },
         ]);
-        console.log('✅ Registered Category: GEOFENCE_MATCH');
+
+        // 2. Friend Match Hint (Second Notification)
+        await Notifications.setNotificationCategoryAsync('MATCH_HINT', [
+          {
+            identifier: 'REVEAL',
+            buttonTitle: 'Reveal 👁️',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'CHECK_HINTS',
+            buttonTitle: 'Check Hints 🔍',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+        ]);
+        console.log('✅ Registered Categories: GEOFENCE_MATCH & MATCH_HINT');
       }
 
       // Set up notification listeners
@@ -91,13 +109,13 @@ export default function NotificationHandler() {
         const actionId = response.actionIdentifier;
         const data = response.notification.request.content.data;
         const notificationId = response.notification.request.identifier;
-        console.log('👆 Notification tapped:', actionId, data);
+
+        console.log('👆 Notification Response Received:', actionId);
 
         // Helper: Dismiss notification and collapse panel
         const dismissAndCollapse = async () => {
           try {
             await Notifications.dismissNotificationAsync(notificationId);
-            console.log('✅ Notification dismissed');
           } catch (e) {
             console.warn('⚠️ Could not dismiss notification:', e.message);
           }
@@ -107,37 +125,60 @@ export default function NotificationHandler() {
               const { NativeModules } = require('react-native');
               if (NativeModules.StatusBarManager?.collapsePanels) {
                 NativeModules.StatusBarManager.collapsePanels();
-                console.log('✅ Collapsed notification panel');
               }
-            } catch (e) {
-              console.warn('⚠️ Could not collapse panel:', e.message);
-            }
+            } catch (e) { }
           }
         };
 
-        // ✅ HANDLE INTERACTIVE ACTIONS
-        if (actionId === 'WAVE') {
-          console.log('🌊 WAVE ACTION DETECTED -> Navigating to /home/HomeScreen');
+        // ✅ HANDLE WAVE_HINT NOTIFICATIONS
+        if (data?.type === 'WAVE_HINT') {
+          console.log('🌊 WAVE HINT NOTIFICATION DETECTED');
+        }
 
-          // ✅ Set open_to_wave = true in database
+        // --- ACTIONS ---
+
+        // 1. WAVE (From Zone Entry)
+        if (actionId === 'WAVE') {
+          console.log('🌊 WAVE ACTION -> Setting open_to_wave = true');
           if (user?.id) {
-            const zoneName = data?.zoneId || 'Unknown Zone';
+            const zoneName = data?.zoneName || data?.zoneId || 'Unknown Zone';
             await WaveService.setOpenToWave(user.id, zoneName);
           }
-
           await dismissAndCollapse();
-          // Navigate after dismissal
           setTimeout(() => {
             router.replace('/home/HomeScreen');
           }, 100);
         }
+
+        // 2. LATER (From Zone Entry)
         else if (actionId === 'LATER') {
-          console.log('👋 LATER clicked - Notification dismissed');
+          console.log('👋 LATER clicked');
           await dismissAndCollapse();
         }
+
+        // 3. REVEAL (From Hint Match)
+        else if (actionId === 'REVEAL') {
+          console.log('👁️ REVEAL clicked -> Showing Match');
+          await dismissAndCollapse();
+          setTimeout(() => {
+            // Determine where to go - active match screen? or just home?
+            // For now, Home is fine as it shows active status
+            router.replace('/home/HomeScreen');
+          }, 100);
+        }
+
+        // 4. CHECK HINTS (From Hint Match)
+        else if (actionId === 'CHECK_HINTS') {
+          console.log('🔍 CHECK HINTS clicked');
+          await dismissAndCollapse();
+          setTimeout(() => {
+            router.replace('/home/HomeScreen');
+          }, 100);
+        }
+
+        // 5. BODY TAP (Default)
         else if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-          // User tapped the body of the notification, not a button
-          console.log('👆 Notification Body Tapped -> Navigating to /home/HomeScreen');
+          console.log('👆 Body Tapped');
           await dismissAndCollapse();
           setTimeout(() => {
             router.replace('/home/HomeScreen');
@@ -196,23 +237,24 @@ export default function NotificationHandler() {
 
   async function enableChatNotifications() {
     try {
-      // Get FCM Device Token using the correct service
-      const token = await FCMTokenService.getToken();
+      // Get tokens using the correct service
+      const tokens = await FCMTokenService.getToken();
 
-      if (token) {
+      if (tokens) {
         // Store in database
         await supabase
           .from('profiles')
           .update({
-            fcm_token: token,
+            fcm_token: tokens.fcmToken,
+            expo_push_token: tokens.expoToken,
             chat_notifications_enabled: true
           })
           .eq('id', user.id);
 
-        console.log('✅ FCM Device Token saved to database');
+        console.log('✅ Push tokens saved to database');
         console.log('✅ Remote notifications fully enabled!');
       } else {
-        console.log('⚠️ FCM token not available');
+        console.log('⚠️ Tokens not available');
         console.log('💡 Scheduling retry in 60 seconds...');
 
         // Schedule retry
@@ -239,15 +281,18 @@ export default function NotificationHandler() {
 
   async function retryFCMToken() {
     try {
-      const token = await FCMTokenService.forceRetry();
+      const tokens = await FCMTokenService.forceRetry();
 
-      if (token) {
+      if (tokens) {
         await supabase
           .from('profiles')
-          .update({ fcm_token: token })
+          .update({
+            fcm_token: tokens.fcmToken,
+            expo_push_token: tokens.expoToken
+          })
           .eq('id', user.id);
 
-        console.log('✅ FCM token obtained on retry!');
+        console.log('✅ Tokens obtained on retry!');
 
         // Clear retry timeout
         if (retryTimeoutRef.current) {

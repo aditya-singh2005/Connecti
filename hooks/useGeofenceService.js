@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { GEOFENCE_TASK_NAME, setupGeofenceNotificationChannels, storeFCMToken } from '../services/GeofenceManager';
 // import GeofenceNativeBridge from '../services/GeofenceNativeBridge';
 import ExpoPushTokenService from '../services/ExpoPushTokenService';
+import { WaveService } from '../services/WaveService';
 
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const GEOFENCE_CONFIG_KEY = 'geofence_config';
@@ -72,6 +73,17 @@ export function useGeofenceService() {
       const zone = await AsyncStorage.getItem(CURRENT_ZONE_KEY);
       if (zone) {
         setCurrentZone(zone);
+        // ✅ NEW: Sync initial presence
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const lastLocJson = await AsyncStorage.getItem('last_location');
+            const lastLoc = lastLocJson ? JSON.parse(lastLocJson) : null;
+            await WaveService.syncUserZone(user.id, zone, lastLoc);
+          }
+        } catch (syncError) {
+          console.warn('[useGeofence] Initial sync failed:', syncError.message);
+        }
       }
 
       await loadRecentEvents();
@@ -122,6 +134,10 @@ export function useGeofenceService() {
           console.log('⚠️ Auto-start check failed:', error.message);
         }
       }
+
+
+      // ✅ Resume active wave timer if exists
+      await WaveService.checkAndResumeTimer();
 
       await updateCurrentLocation();
     };
@@ -363,6 +379,16 @@ export function useGeofenceService() {
           // ✅ FIXED: Send ONLY ONE notification
           await sendSingleZoneNotification(zoneName, Math.round(foundZone.distance), location);
 
+          // ✅ NEW: Sync with Supabase via WaveService
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await WaveService.syncUserZone(user.id, zoneName, location);
+            }
+          } catch (dbError) {
+            console.warn('[FG] ⚠️ Presence sync failed:', dbError.message);
+          }
+
           setCurrentZone(zoneName);
           await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
         }
@@ -370,6 +396,21 @@ export function useGeofenceService() {
         // Not in any zone
         if (currentZone) {
           console.log(`🚪 Left zone: ${currentZone}`);
+
+          // ✅ NEW: Cleanup active_zone_users
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase
+                .from('active_zone_users')
+                .delete()
+                .eq('user_id', user.id);
+              console.log(`[FG] 🌐 Cleared active_zone_users`);
+            }
+          } catch (dbError) {
+            console.warn('[FG] ⚠️ Database cleanup failed:', dbError.message);
+          }
+
           setCurrentZone(null);
           await AsyncStorage.removeItem(CURRENT_ZONE_KEY);
 
