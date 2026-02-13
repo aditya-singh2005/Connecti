@@ -11,12 +11,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGeofenceService } from '../../hooks/useGeofenceService';
 import * as TaskManager from 'expo-task-manager';
 import { GEOFENCE_TASK_NAME } from '../../services/GeofenceManager';
 
 export default function GeofenceTestScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     isGeofencingActive,
     currentLocation,
@@ -151,7 +153,7 @@ export default function GeofenceTestScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.headerContainer}>
+      <View style={[styles.headerContainer, { paddingTop: insets.top + 10 }]}>
         <View style={styles.headerContent}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
@@ -470,11 +472,11 @@ export default function GeofenceTestScreen() {
           </View>
         </View>
 
-        <View style={{ height: 90 }} />
+        <View style={{ height: 100 + insets.bottom }} />
       </ScrollView>
 
       {/* Floating Control Button */}
-      <View style={styles.floatingButtonContainer}>
+      <View style={[styles.floatingButtonContainer, { bottom: insets.bottom + 16 }]}>
         <TouchableOpacity
           style={[
             styles.controlBtn,
@@ -505,7 +507,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   headerContainer: {
-    paddingTop: 50,
     paddingBottom: 20,
     backgroundColor: '#8B5CF6',
     borderBottomLeftRadius: 20,

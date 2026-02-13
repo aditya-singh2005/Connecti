@@ -19,8 +19,8 @@ class FCMTokenService {
    * This is what your backend expects!
    */
   async getToken() {
-    // Return cached token if available
-    if (this.cachedToken) {
+    // Return cached token if valid object
+    if (this.cachedToken && typeof this.cachedToken === 'object') {
       console.log('✅ Using cached FCM Device Token');
       return this.cachedToken;
     }
@@ -28,9 +28,14 @@ class FCMTokenService {
     // Try to get from storage
     const storedToken = await AsyncStorage.getItem(FCM_TOKEN_KEY);
     if (storedToken) {
-      console.log('✅ Using stored FCM Device Token');
-      this.cachedToken = storedToken;
-      return storedToken;
+      try {
+        const parsedToken = JSON.parse(storedToken);
+        console.log('✅ Using stored FCM Device Token');
+        this.cachedToken = parsedToken;
+        return parsedToken;
+      } catch (e) {
+        console.log('⚠️ Stored token corrupt, fetching new one...');
+      }
     }
 
     // Fetch new token

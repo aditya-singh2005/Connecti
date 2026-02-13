@@ -15,6 +15,7 @@ const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const GEOFENCE_CONFIG_KEY = 'geofence_config';
 const CURRENT_ZONE_KEY = 'current_zone';
 const NOTIFIED_ZONES_KEY = 'notified_zones';
+const SESSION_LAST_ACTIVE_KEY = 'session_last_active';
 
 export function useGeofenceService() {
   const [isGeofencingActive, setIsGeofencingActive] = useState(false);
@@ -65,26 +66,43 @@ export function useGeofenceService() {
       //   await syncNativeEvents();
       // }
 
-      const notified = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
-      if (notified) {
-        notifiedZones.current = new Set(JSON.parse(notified));
-      }
+      // 🧹 SESSION CLEANUP: If app loads after a long time, wipe notified zones and active zone
+      const lastActive = await AsyncStorage.getItem(SESSION_LAST_ACTIVE_KEY);
+      const now = Date.now();
+      const STALE_THRESHOLD = 30 * 60 * 1000; // 30 mins
 
-      const zone = await AsyncStorage.getItem(CURRENT_ZONE_KEY);
-      if (zone) {
-        setCurrentZone(zone);
-        // ✅ NEW: Sync initial presence
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const lastLocJson = await AsyncStorage.getItem('last_location');
-            const lastLoc = lastLocJson ? JSON.parse(lastLocJson) : null;
-            await WaveService.syncUserZone(user.id, zone, lastLoc);
+      if (lastActive && (now - parseInt(lastActive) > STALE_THRESHOLD)) {
+        console.log('🧹 Stale session found. Wiping notified zones and current zone.');
+        await AsyncStorage.removeItem(NOTIFIED_ZONES_KEY);
+        await AsyncStorage.removeItem(CURRENT_ZONE_KEY);
+        await AsyncStorage.removeItem('wave_timer_expiry'); // WAVE_TIMER_KEY from WaveService
+        setCurrentZone(null);
+        notifiedZones.current = new Set();
+      } else {
+        const notified = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
+        if (notified) {
+          notifiedZones.current = new Set(JSON.parse(notified));
+        }
+
+        const zone = await AsyncStorage.getItem(CURRENT_ZONE_KEY);
+        if (zone) {
+          setCurrentZone(zone);
+          // ✅ Sync initial presence
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const lastLocJson = await AsyncStorage.getItem('last_location');
+              const lastLoc = lastLocJson ? JSON.parse(lastLocJson) : null;
+              await WaveService.syncUserZone(user.id, zone, lastLoc);
+            }
+          } catch (syncError) {
+            console.warn('[useGeofence] Initial sync failed:', syncError.message);
           }
-        } catch (syncError) {
-          console.warn('[useGeofence] Initial sync failed:', syncError.message);
         }
       }
+
+      // Update last active on every load
+      await AsyncStorage.setItem(SESSION_LAST_ACTIVE_KEY, now.toString());
 
       await loadRecentEvents();
 
@@ -99,12 +117,15 @@ export function useGeofenceService() {
       } else {
         // 🧹 Auto-Clean: If no config exists, ensure no background task is running.
         // This prevents "zombie" tasks from firing on app open if the user previously cleared data/did not start.
-        const isTaskDefined = await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME);
-        if (isTaskDefined) {
-          console.log("🧹 Found zombie geofence task without config, stopping it...");
-          try {
+        try {
+          const isTaskDefined = await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME);
+          if (isTaskDefined) {
+            console.log("🧹 Found zombie geofence task without config, stopping it...");
             await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
-          } catch (e) {
+          }
+        } catch (e) {
+          // Ignore TaskNotFoundException - it just means there was nothing to stop
+          if (!e.message.includes('TaskNotFoundException')) {
             console.log('⚠️ Could not stop zombie task:', e.message);
           }
         }
@@ -279,19 +300,22 @@ export function useGeofenceService() {
       }));
 
       try {
-        // ✅ CRITICAL FIX: Ensure task is defined before touching it
+        // ✅ CRITICAL FIX: Ensure task is DEFINED in JS
         const isTaskDefined = await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME);
         if (!isTaskDefined) {
           console.warn(`[useGeofenceService] Task ${GEOFENCE_TASK_NAME} not defined! Skipping update.`);
           return false;
         }
 
-        const isRunning = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
-        if (isRunning) {
+        // Check if already registered (running)
+        const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
+
+        if (isTaskRegistered) {
           try {
             await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+            console.log('[useGeofenceService] Stopped existing geofencing for update');
           } catch (stopError) {
-            console.log('[useGeofenceService] Note: Failed to stop existing task (might be already stopped):', stopError.message);
+            console.log('[useGeofenceService] Note: Failed to stop existing task:', stopError.message);
           }
         }
 
@@ -305,8 +329,27 @@ export function useGeofenceService() {
           notifyOnExit: false,
         }));
 
-        await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, cleanZones);
-        console.log(`✅ Updated to monitor ${geofences.length} zones`);
+        // ✅ Add delay to ensure Android context is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        let success = false;
+        let attempts = 0;
+
+        while (!success && attempts < 3) {
+          try {
+            await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, cleanZones);
+            success = true;
+            console.log(`✅ Updated to monitor ${geofences.length} zones`);
+          } catch (e) {
+            console.log(`⚠️ Geofencing start attempt ${attempts + 1} failed: ${e.message}`);
+            attempts++;
+            if (attempts < 3) await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+
+        if (!success) {
+          throw new Error("Failed to start geofencing after 3 attempts");
+        }
 
         if (false) { // Native support removed
           //   await GeofenceNativeBridge.unregisterGeofences();
@@ -376,17 +419,23 @@ export function useGeofenceService() {
           notifiedZones.current.add(zoneName);
           await saveNotifiedZones();
 
-          // ✅ FIXED: Send ONLY ONE notification
-          await sendSingleZoneNotification(zoneName, Math.round(foundZone.distance), location);
-
-          // ✅ NEW: Sync with Supabase via WaveService
+          // ✅ 1. Sync with Supabase via WaveService
+          let alreadyOpen = false;
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await WaveService.syncUserZone(user.id, zoneName, location);
+              const syncResult = await WaveService.syncUserZone(user.id, zoneName, location);
+              alreadyOpen = syncResult?.openToWave || false;
             }
           } catch (dbError) {
             console.warn('[FG] ⚠️ Presence sync failed:', dbError.message);
+          }
+
+          // ✅ 2. Send notification ONLY if not already open
+          if (!alreadyOpen) {
+            await sendSingleZoneNotification(zoneName, Math.round(foundZone.distance), location);
+          } else {
+            console.log(`[FG] 🌊 User already open to wave in ${zoneName}, skipping alert`);
           }
 
           setCurrentZone(zoneName);
@@ -397,7 +446,8 @@ export function useGeofenceService() {
         if (currentZone) {
           console.log(`🚪 Left zone: ${currentZone}`);
 
-          // ✅ NEW: Cleanup active_zone_users
+          /* 
+          // ✅ OLD: Cleanup active_zone_users
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
@@ -405,18 +455,19 @@ export function useGeofenceService() {
                 .from('active_zone_users')
                 .delete()
                 .eq('user_id', user.id);
-              console.log(`[FG] 🌐 Cleared active_zone_users`);
             }
           } catch (dbError) {
             console.warn('[FG] ⚠️ Database cleanup failed:', dbError.message);
           }
+          */
 
           setCurrentZone(null);
           await AsyncStorage.removeItem(CURRENT_ZONE_KEY);
 
-          // Clear notified zones so we can re-enter
-          notifiedZones.current.clear();
-          await saveNotifiedZones();
+          // ✅ NEW: Don't clear notified zones on exit.
+          // This ensures we only ask once per zone per session (as requested).
+          // notifiedZones.current.clear();
+          // await saveNotifiedZones();
         }
       }
 
@@ -449,7 +500,7 @@ export function useGeofenceService() {
        * This ensures immediate feedback when the app is open/monitored.
        * The Cooldown Logic prevents the Background Task from sending a duplicate.
        */
-      const notificationId = await Notifications.scheduleNotificationAsync({
+      await Notifications.scheduleNotificationAsync({
         content: {
           title: `📍 Entered ${zoneName}`,
           body: "Tap 'Wave' to check in! 👋",
@@ -464,7 +515,7 @@ export function useGeofenceService() {
         trigger: null,
       });
 
-      console.log(`✅ Notification sent! ID: ${notificationId}`);
+      console.log(`✅ Entry notification sent for ${zoneName}`);
 
       // Store event
       await storeGeofenceEvent({
@@ -668,7 +719,22 @@ export function useGeofenceService() {
       }));
 
       try {
-        await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+        // ✅ Ensure task is defined before starting
+        const isTaskDefined = await TaskManager.isTaskDefined(GEOFENCE_TASK_NAME);
+        if (!isTaskDefined) {
+          console.error(`[registerGeofences] Task ${GEOFENCE_TASK_NAME} not defined! Cannot start geofencing.`);
+          return false;
+        }
+
+        // Stop if already running to ensure clean start
+        const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
+        if (isTaskRegistered) {
+          try {
+            await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+          } catch (e) {
+            console.log('ℹ️ Failed to stop existing task:', e.message);
+          }
+        }
       } catch (e) { }
 
       console.log('📌 Starting Expo geofencing...');
@@ -682,8 +748,27 @@ export function useGeofenceService() {
         notifyOnExit: false,
       }));
 
-      await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, cleanZones);
-      console.log('✅ Expo geofencing active');
+      // ✅ Add delay to ensure Android context is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      let startSuccess = false;
+      let startAttempts = 0;
+
+      while (!startSuccess && startAttempts < 3) {
+        try {
+          await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, cleanZones);
+          startSuccess = true;
+          console.log('✅ Expo geofencing active');
+        } catch (e) {
+          console.log(`⚠️ Geofencing start attempt ${startAttempts + 1} failed: ${e.message}`);
+          startAttempts++;
+          if (startAttempts < 3) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      if (!startSuccess) {
+        throw new Error("Failed to start geofencing after 3 attempts");
+      }
 
       if (false) {
         console.log('📌 Registering native geofences...');

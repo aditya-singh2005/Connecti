@@ -10,7 +10,9 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { useBleProximityNotifications } from '../../hooks/useBLEProximityNotifications';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +20,8 @@ import { useRouter } from 'expo-router';
 
 export default function ProximitySettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width } = Dimensions.get('window');
   const {
     isEnabled,
     hasPermissions,
@@ -47,15 +51,15 @@ export default function ProximitySettingsScreen() {
   const handleToggle = async (value) => {
     if (value) {
       await checkPermissions();
-      
+
       if (notificationPermission !== 'granted') {
         Alert.alert(
           'Permission Required',
           'Notification permission is needed for proximity alerts.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Grant Permission', 
+            {
+              text: 'Grant Permission',
               onPress: async () => {
                 const granted = await requestPermissions();
                 await checkPermissions();
@@ -70,7 +74,7 @@ export default function ProximitySettingsScreen() {
       }
 
       const success = await enableProximityNotifications();
-      
+
       if (!success) {
         Alert.alert(
           'Failed to Enable',
@@ -87,8 +91,8 @@ export default function ProximitySettingsScreen() {
         'You won\'t be notified when friends are nearby.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Disable', 
+          {
+            text: 'Disable',
             style: 'destructive',
             onPress: () => disableProximityNotifications()
           },
@@ -106,10 +110,14 @@ export default function ProximitySettingsScreen() {
   const permStatus = getPermissionStatus(notificationPermission);
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={[styles.container]}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
@@ -250,7 +258,7 @@ export default function ProximitySettingsScreen() {
       {/* How It Works */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>How It Works</Text>
-        
+
         <View style={styles.featureCard}>
           <View style={styles.featureIcon}>
             <Ionicons name="bluetooth" size={24} color="#4A90E2" />
@@ -307,8 +315,8 @@ export default function ProximitySettingsScreen() {
           <Text style={styles.privacyTitle}>Your Privacy Matters</Text>
         </View>
         <Text style={styles.privacyText}>
-          BLE detection is more private than GPS! Your exact location is never stored. 
-          Only Bluetooth proximity is detected. Only accepted friends can detect you. 
+          BLE detection is more private than GPS! Your exact location is never stored.
+          Only Bluetooth proximity is detected. Only accepted friends can detect you.
           You can disable this anytime.
         </Text>
       </View>
@@ -316,7 +324,7 @@ export default function ProximitySettingsScreen() {
       {/* Tips Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Tips for Best Results</Text>
-        
+
         <View style={styles.tipCard}>
           <View style={styles.tipHeader}>
             <Ionicons name="checkmark-circle" size={20} color="#10B981" />
@@ -374,7 +382,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
     paddingBottom: 24,
     backgroundColor: '#FFF',
   },

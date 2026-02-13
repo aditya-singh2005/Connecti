@@ -21,6 +21,8 @@ export const GEOFENCE_TASK_NAME = 'CONNECTI_GEOFENCE_TASK';
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const FCM_DEVICE_TOKEN_KEY = 'fcm_device_token';
 const CURRENT_ZONE_KEY = 'current_zone';
+const NOTIFIED_ZONES_KEY = 'notified_zones';
+const SESSION_LAST_ACTIVE_KEY = 'session_last_active';
 
 export async function storeFCMToken(token) {
   try {
@@ -73,24 +75,22 @@ async function sendSingleNotification(zoneName, distance, timestamp) {
   try {
     console.log(`📢 Sending SINGLE notification: ${zoneName}`);
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
+    await Notifications.scheduleNotificationAsync({
       content: {
         title: `📍 Entered ${zoneName}`,
         body: "Tap 'Wave' to check in! 👋",
-        data: { url: '/home/HomeScreen', zoneId: zoneName },
-        categoryIdentifier: 'GEOFENCE_MATCH', // ✅ Interactive Buttons
+        data: { url: '/home/HomeScreen', zoneName },
+        categoryIdentifier: 'GEOFENCE_MATCH',
         sound: true,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 300, 200, 300],
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        vibrate: [0, 250, 250, 250],
         badge: 1,
         channelId: 'geofence-alerts',
-        // visibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Optional
-        // No 'style' property -> Standard view (not BigText) by default
       },
       trigger: null,
     });
 
-    console.log(`✅ Notification sent! ID: ${notificationId}`);
+    console.log(`✅ Notification sent for ${zoneName}`);
     return true;
   } catch (error) {
     console.error('❌ Notification failed:', error.message);
@@ -131,21 +131,9 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
 
   if (eventType === Location.GeofencingEventType.Exit) {
     console.log(`[BG] 🚪 Exited ${zoneName}`);
-
-    // ✅ Cleanup active_zone_users
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('active_zone_users')
-          .delete()
-          .eq('user_id', user.id);
-        console.log(`[BG] 🌐 Cleared active_zone_users for ${zoneName}`);
-      }
-    } catch (dbError) {
-      console.warn('[BG] ⚠️ Database cleanup failed:', dbError.message);
-    }
-
+    // ✅ NEW LOGIC: Do NOT delete on exit. 
+    // This allows open_to_wave to persist if moving between zones.
+    // Stale records are handled by the 30-min DB cleanup trigger.
     return;
   }
 
@@ -160,18 +148,48 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
     try {
       await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
 
+      // 🧹 SESSION CLEANUP: Wipe notified zones if stale
+      const lastActive = await AsyncStorage.getItem(SESSION_LAST_ACTIVE_KEY);
+      const currentTime = new Date().getTime();
+      const STALE_THRESHOLD = 30 * 60 * 1000; // 30 mins
+
+      if (lastActive && (currentTime - parseInt(lastActive) > STALE_THRESHOLD)) {
+        console.log('[BG] 🧹 Stale session. Wiping notified zones.');
+        await AsyncStorage.removeItem(NOTIFIED_ZONES_KEY);
+      }
+      await AsyncStorage.setItem(SESSION_LAST_ACTIVE_KEY, currentTime.toString());
+
       // ✅ Sync with Supabase via WaveService
+      let alreadyOpen = false;
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          await WaveService.syncUserZone(user.id, zoneName, {
+          const syncResult = await WaveService.syncUserZone(user.id, zoneName, {
             latitude: region.latitude,
             longitude: region.longitude
           });
+          alreadyOpen = syncResult?.openToWave || false;
         }
       } catch (dbError) {
         console.warn('[BG] ⚠️ Presence sync failed:', dbError.message);
       }
+
+      if (alreadyOpen) {
+        console.log(`[BG] 🌊 User already open to wave in ${zoneName}, skipping notification`);
+        return;
+      }
+
+      // ✅ NEW: ONE-SHOT CHECK - Don't ask again if neglected
+      const notifiedStr = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
+      let notifiedList = notifiedStr ? JSON.parse(notifiedStr) : [];
+      if (notifiedList.includes(zoneName)) {
+        console.log(`[BG] ⏳ Already prompted for ${zoneName} once, skipping.`);
+        return;
+      }
+
+      // Add to notified list before sending
+      notifiedList.push(zoneName);
+      await AsyncStorage.setItem(NOTIFIED_ZONES_KEY, JSON.stringify(notifiedList));
 
       const eventData = {
         type: 'enter',
@@ -191,7 +209,8 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       const lastSentTime = await AsyncStorage.getItem(outputKey);
       const now = new Date().getTime();
 
-      if (lastSentTime && (now - parseInt(lastSentTime) < 15000)) {
+      // REDUCED COOLDOWN: 1 second for testing (was 15s)
+      if (lastSentTime && (now - parseInt(lastSentTime) < 1000)) {
         // Silent cooldown return
         return;
       }

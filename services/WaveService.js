@@ -5,7 +5,13 @@ import { supabase } from '../lib/supabase';
 const WAVE_TIMER_KEY = 'wave_timer_expiry';
 const WAVE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
+let resetTimeout = null;
+
 export class WaveService {
+    /**
+     * Aggressively syncs the user's active zone presence to Supabase.
+     * Can be called from foreground or background.
+     */
     /**
      * Aggressively syncs the user's active zone presence to Supabase.
      * Can be called from foreground or background.
@@ -41,15 +47,28 @@ export class WaveService {
                 }
             }
 
-            // 3. Get open_to_wave status (Use override if provided, else fetch)
+            // 3. Get existing state to preserve open_to_wave if active
             let openToWaveStatus = openToWaveOverride;
+
             if (openToWaveStatus === undefined) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('open_to_wave')
-                    .eq('id', userId)
+                const { data: existing } = await supabase
+                    .from('active_zone_users')
+                    .select('open_to_wave, last_updated')
+                    .eq('user_id', userId)
                     .single();
-                openToWaveStatus = profile?.open_to_wave || false;
+
+                if (existing) {
+                    const lastUpdate = new Date(existing.last_updated).getTime();
+                    const now = new Date().getTime();
+                    // If updated within 30 mins, preserve the status
+                    if (now - lastUpdate < WAVE_DURATION_MS) {
+                        openToWaveStatus = existing.open_to_wave;
+                    } else {
+                        openToWaveStatus = false;
+                    }
+                } else {
+                    openToWaveStatus = false;
+                }
             }
 
             if (zoneId) {
@@ -68,20 +87,52 @@ export class WaveService {
                     upsertData.longitude = location.longitude;
                 }
 
+                // UPSERT ensures one and only one entry per user
                 const { error } = await supabase
                     .from('active_zone_users')
                     .upsert(upsertData, { onConflict: 'user_id' });
 
                 if (error) throw error;
+
+                // 4. Update local timer if open
+                if (openToWaveStatus) {
+                    const timerDataJson = await AsyncStorage.getItem(WAVE_TIMER_KEY);
+                    let expiryTime;
+
+                    if (timerDataJson && openToWaveOverride === undefined) {
+                        const timerData = JSON.parse(timerDataJson);
+                        // ✅ Refresh timer ONLY if zone name changes
+                        if (finalZoneName !== timerData.zoneName) {
+                            console.log(`[Sync] ♻️ Zone changed to ${finalZoneName}, refreshing wave timer`);
+                            expiryTime = new Date().getTime() + WAVE_DURATION_MS;
+                            // Reschedule local reset
+                            this.scheduleAutoReset(userId, expiryTime);
+                        } else {
+                            expiryTime = timerData.expiryTime;
+                        }
+                    } else {
+                        // ✅ Explicit 'WAVE' or 'AUTO-EXTEND', always fresh timer
+                        console.log(`[Sync] 🔥 Explicit wave/extend in ${finalZoneName}, setting fresh 30m timer`);
+                        expiryTime = new Date().getTime() + WAVE_DURATION_MS;
+                        this.scheduleAutoReset(userId, expiryTime);
+                    }
+
+                    await AsyncStorage.setItem(WAVE_TIMER_KEY, JSON.stringify({
+                        userId,
+                        zoneName: finalZoneName,
+                        expiryTime
+                    }));
+                }
+
                 console.log(`[Sync] ✅ Successfully synced presence in ${finalZoneName} (Open: ${openToWaveStatus})`);
-                return true;
+                return { success: true, openToWave: openToWaveStatus };
             } else {
                 console.warn(`[Sync] ⚠️ Could not find zone_id for ${finalZoneName}, skip sync`);
-                return false;
+                return { success: false, openToWave: false };
             }
         } catch (error) {
             console.error('[Sync] ❌ Failed to sync presence:', error.message);
-            return false;
+            return { success: false, openToWave: false };
         }
     }
 
@@ -89,16 +140,11 @@ export class WaveService {
         try {
             console.log(`🌊 Setting open_to_wave = true for user ${userId}`);
 
-            // 1. Update Profile
-            await supabase
-                .from('profiles')
-                .update({ open_to_wave: true })
-                .eq('id', userId);
-
-            // 2. Sync Active Zone Presence (Explicitly TRUE)
+            // 1. Sync Active Zone Presence (Explicitly TRUE)
+            // This is now the ONLY place where open_to_wave becomes true
             await this.syncUserZone(userId, zoneName, null, true);
 
-            // 3. Setup Timer
+            // 2. Setup Timer
             const expiryTime = new Date().getTime() + WAVE_DURATION_MS;
             await AsyncStorage.setItem(WAVE_TIMER_KEY, JSON.stringify({
                 userId,
@@ -117,11 +163,13 @@ export class WaveService {
     }
 
     static scheduleAutoReset(userId, expiryTime) {
+        if (resetTimeout) clearTimeout(resetTimeout);
+
         const now = new Date().getTime();
         const delay = expiryTime - now;
 
         if (delay > 0) {
-            setTimeout(async () => {
+            resetTimeout = setTimeout(async () => {
                 await this.resetOpenToWave(userId);
             }, delay);
         }
@@ -129,35 +177,20 @@ export class WaveService {
 
     static async resetOpenToWave(userId) {
         try {
-            // Check for auto-refresh
-            const timerData = await AsyncStorage.getItem(WAVE_TIMER_KEY);
             const currentZone = await AsyncStorage.getItem('current_zone');
 
-            if (timerData && currentZone) {
-                const { zoneName } = JSON.parse(timerData);
-                if (zoneName === currentZone) {
-                    console.log(`♻️ User still in ${zoneName}, auto-refreshing timer...`);
-                    // Refresh behavior: Reset the timer, keep open_to_wave = true
-                    return await this.setOpenToWave(userId, zoneName);
-                }
-            }
-
-            console.log(`🔄 Resetting open_to_wave to false for user ${userId}`);
-
-            await supabase
-                .from('profiles')
-                .update({ open_to_wave: false })
-                .eq('id', userId);
-
-            // If still actively tracked in a zone, update status to false
             if (currentZone) {
-                await this.syncUserZone(userId, currentZone, null, false);
-            } else {
-                // If not in a zone locally, ensure we clean up the record
-                console.log(`🗑️ Removing active_zone_user record for ${userId}`);
-                await supabase.from('active_zone_users').delete().eq('user_id', userId);
+                console.log(`♻️ User still in ${currentZone}, auto-extending wave timer...`);
+                // Use setOpenToWave to refresh both DB and local timer/reschedule reset
+                return await this.setOpenToWave(userId, currentZone);
             }
 
+            console.log(`🗑️ User left all zones and timer expired. Clearing record for ${userId}`);
+
+            // Delete from DB
+            await supabase.from('active_zone_users').delete().eq('user_id', userId);
+
+            // Clear local tracking
             await AsyncStorage.removeItem(WAVE_TIMER_KEY);
             return true;
         } catch (error) {

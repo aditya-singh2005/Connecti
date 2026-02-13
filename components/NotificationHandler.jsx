@@ -9,6 +9,15 @@ import { useRouter } from 'expo-router';
 import FCMTokenService from '../services/FCMTokenService';
 import { WaveService } from '../services/WaveService';
 
+// ✅ Ensure notifications show when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
 export default function NotificationHandler() {
   const { user } = useAuth();
   const router = useRouter();
@@ -97,7 +106,25 @@ export default function NotificationHandler() {
             },
           },
         ]);
-        console.log('✅ Registered Categories: GEOFENCE_MATCH & MATCH_HINT');
+
+        // 3. Match Revealed (Final Celebration)
+        await Notifications.setNotificationCategoryAsync('MATCH_REVEALED', [
+          {
+            identifier: 'START_CHAT',
+            buttonTitle: 'Chat 💬',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'MISS_MOMENT',
+            buttonTitle: 'Miss the Moment',
+            options: {
+              isDestructive: true,
+            },
+          },
+        ]);
+        console.log('✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED');
       }
 
       // Set up notification listeners
@@ -158,12 +185,35 @@ export default function NotificationHandler() {
 
         // 3. REVEAL (From Hint Match)
         else if (actionId === 'REVEAL') {
-          console.log('👁️ REVEAL clicked -> Showing Match');
+          console.log('👁️ REVEAL clicked -> Revealing match and opening HintScreen');
+          const matchId = data?.matchId;
+
+          if (matchId && user?.id) {
+            try {
+              // Call reveal_match RPC
+              const { data: revealData, error } = await supabase
+                .rpc('reveal_match', {
+                  match_id: matchId,
+                  user_id: user.id
+                });
+
+              if (error) {
+                console.error('❌ Reveal error:', error);
+              } else {
+                console.log('✅ Reveal successful:', revealData);
+              }
+            } catch (err) {
+              console.error('❌ Reveal exception:', err);
+            }
+          }
+
           await dismissAndCollapse();
           setTimeout(() => {
-            // Determine where to go - active match screen? or just home?
-            // For now, Home is fine as it shows active status
-            router.replace('/home/HomeScreen');
+            if (matchId) {
+              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+            } else {
+              router.replace('/home/HomeScreen');
+            }
           }, 100);
         }
 
@@ -172,7 +222,12 @@ export default function NotificationHandler() {
           console.log('🔍 CHECK HINTS clicked');
           await dismissAndCollapse();
           setTimeout(() => {
-            router.replace('/home/HomeScreen');
+            const matchId = data?.matchId;
+            if (matchId) {
+              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+            } else {
+              router.replace('/home/HomeScreen');
+            }
           }, 100);
         }
 
@@ -181,6 +236,14 @@ export default function NotificationHandler() {
           console.log('👆 Body Tapped');
           await dismissAndCollapse();
           setTimeout(() => {
+            // Check if it's a match-related notification
+            const matchId = data?.matchId;
+            if (data?.type === 'MATCH_REVEALED' || data?.type === 'WAVE_HINT') {
+              if (matchId) {
+                router.push({ pathname: '/home/HintScreen', params: { matchId } });
+                return;
+              }
+            }
             router.replace('/home/HomeScreen');
           }, 100);
         }
@@ -240,7 +303,7 @@ export default function NotificationHandler() {
       // Get tokens using the correct service
       const tokens = await FCMTokenService.getToken();
 
-      if (tokens) {
+      if (tokens && tokens.fcmToken) {
         // Store in database
         await supabase
           .from('profiles')
@@ -254,7 +317,7 @@ export default function NotificationHandler() {
         console.log('✅ Push tokens saved to database');
         console.log('✅ Remote notifications fully enabled!');
       } else {
-        console.log('⚠️ Tokens not available');
+        console.log('⚠️ Tokens not available or invalid structure', tokens);
         console.log('💡 Scheduling retry in 60 seconds...');
 
         // Schedule retry

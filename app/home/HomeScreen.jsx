@@ -8,13 +8,91 @@ import {
   TouchableOpacity,
   Image,
 } from "react-native";
+// import { LinearGradient } from 'expo-linear-gradient'; // REMOVED
 import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
 import { useFriendships } from "../../hooks/useFriendships";
 import { useGeofenceService } from "../../hooks/useGeofenceService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { supabase } from "../../lib/supabase"; // Import Supabase
+import { useAuth } from "../../context/AuthProvider";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { user } = useAuth(); // Get user for match fetching
+  const insets = useSafeAreaInsets();
+
+  const [activeMatch, setActiveMatch] = useState(null);
+
+  // Fetch active matches on mount and focus
+  useEffect(() => {
+    if (!user?.id) return;
+
+    fetchActiveMatch();
+
+    // 🚀 NEW: Realtime match detection
+    const channel = supabase
+      .channel(`home_monitor_${user.id.slice(0, 8)}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT/UPDATE to catch matches and status changes
+          schema: 'public',
+          table: 'wave_notification_logs',
+          filter: `or(user1_id.eq.${user.id},user2_id.eq.${user.id})`
+        },
+        (payload) => {
+          console.log('[Home] ⚡ Realtime match update:', payload.new);
+          if (payload.new && payload.new.both_notified) {
+            // Check staleness before setting
+            const matchTime = new Date(payload.new.matched_at).getTime();
+            if (Date.now() - matchTime < 60 * 60 * 1000) {
+              setActiveMatch(payload.new);
+            } else {
+              setActiveMatch(null);
+            }
+          } else {
+            // If both_notified is false or it was deleted, clear it
+            setActiveMatch(null);
+          }
+        }
+      )
+      .subscribe();
+
+    const interval = setInterval(() => {
+      fetchActiveMatch();
+    }, 15000); // Periodic fallback sync
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [user?.id]);
+
+  const fetchActiveMatch = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('wave_notification_logs')
+        .select('*')
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .eq('both_notified', true)
+        .order('matched_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) {
+        const matchTime = new Date(data.matched_at).getTime();
+        if (Date.now() - matchTime < 60 * 60 * 1000) {
+          setActiveMatch(data);
+          return;
+        }
+      }
+      setActiveMatch(null);
+    } catch (e) {
+      setActiveMatch(null);
+    }
+  };
 
   // Friendships for badge counts
   const {
@@ -170,10 +248,53 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
+  const ActiveMatchCard = () => {
+    if (!activeMatch) return null;
+
+    const isRevealed = activeMatch.revealed_at !== null;
+
+    return (
+      <TouchableOpacity
+        style={styles.activeMatchCard}
+        onPress={() => router.push({ pathname: '/home/HintScreen', params: { matchId: activeMatch.id } })}
+        activeOpacity={0.9}
+      >
+        <View
+          style={[
+            styles.activeMatchContent,
+            isRevealed && styles.activeMatchContentRevealed,
+            !isRevealed && { backgroundColor: '#4F46E5' } // Explicit fallback for unrevealed
+          ]}
+        >
+          <View style={[styles.matchIconContainer, isRevealed && { backgroundColor: '#C7D2FE' }]}>
+            <Ionicons
+              name={isRevealed ? "heart" : "search"}
+              size={24}
+              color={isRevealed ? "#4F46E5" : "#FFFFFF"}
+            />
+          </View>
+          <View style={styles.matchTextContainer}>
+            <Text style={[styles.matchTitle, isRevealed && { color: '#111827' }]}>
+              {isRevealed ? "It's a Match! 🎉" : "New Hint Received! 🔍"}
+            </Text>
+            <Text style={[styles.matchSubtitle, isRevealed && { color: '#4B5563' }]}>
+              {isRevealed ? "Tap to see who you matched with!" : "Tap to check anonymous hints..."}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={isRevealed ? "#9CA3AF" : "#A5B4FC"} />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Modern Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + (insets.top > 20 ? 10 : 20) }]}>
         <View style={styles.headerContent}>
           {/* CHANGED: Using actual app logo image instead of icon */}
           <View style={styles.logoContainer}>
@@ -194,6 +315,9 @@ export default function HomeScreen() {
       <View style={styles.statusSection}>
         <StatusCard />
       </View>
+
+      {/* ✅ ACTIVE MATCH CARD - Shows if there's a match/hint waiting */}
+      <ActiveMatchCard />
 
       {/* Menu Grid */}
       <View style={styles.section}>
@@ -262,7 +386,6 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 24,
     backgroundColor: '#FFFFFF',
   },
@@ -447,5 +570,53 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#92400E',
     lineHeight: 18,
+  },
+
+  // Active Match Card
+  activeMatchCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  //   activeMatchGradient: {
+  //     borderRadius: 16,
+  //     padding: 1, // Border effect
+  //   },
+  activeMatchContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    gap: 12,
+    backgroundColor: '#4F46E5', // Fallback solid color
+  },
+  activeMatchContentRevealed: {
+    backgroundColor: '#EEF2FF',
+  },
+  matchIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchTextContainer: {
+    flex: 1,
+  },
+  matchTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  matchSubtitle: {
+    fontSize: 12,
+    color: '#E0E7FF',
   },
 });
