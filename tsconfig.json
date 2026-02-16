@@ -1,29 +1,12 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": false,
-    "skipDefaultLibCheck": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    },
-    "jsx": "react-jsx",
-    "noEmit": true
+    "strict": true
   },
   "include": [
-    "expo-env.d.ts",
-    ".expo/types/**/*.ts",
     "**/*.ts",
     "**/*.tsx",
-    "supabase/functions/send-chat-notification/index.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "babel.config.js",
-    "metro.config.js",
-    "jest.config.js"
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
   ]
 }

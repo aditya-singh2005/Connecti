@@ -269,7 +269,7 @@ export default function HomeLayout() {
           headerShown: false,
         }}
       />
-      
+
       {/* 🚫 HIDE PermissionsScreen from navbar */}
       <Tabs.Screen
         name="PermissionsScreen"
@@ -278,7 +278,34 @@ export default function HomeLayout() {
           headerShown: false,
         }}
       />
-      
+
+      {/* 🚫 HIDE BLETestScreen from navbar */}
+      <Tabs.Screen
+        name="BLETestScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+
+      {/* 🚫 HIDE NotificationTestScreen from navbar */}
+      <Tabs.Screen
+        name="NotificationTestScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+
+      {/* 🚫 HIDE HintScreen from navbar */}
+      <Tabs.Screen
+        name="HintScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+
       {/* 🗺️ HIDE GeofenceTestScreen from navbar */}
       <Tabs.Screen
         name="GeofenceTestScreen"
@@ -287,7 +314,7 @@ export default function HomeLayout() {
           headerShown: false,
         }}
       />
-      
+
     </Tabs>
   );
 }

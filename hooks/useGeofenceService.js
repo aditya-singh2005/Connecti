@@ -10,6 +10,7 @@ import { GEOFENCE_TASK_NAME, setupGeofenceNotificationChannels, storeFCMToken } 
 // import GeofenceNativeBridge from '../services/GeofenceNativeBridge';
 import ExpoPushTokenService from '../services/ExpoPushTokenService';
 import { WaveService } from '../services/WaveService';
+import { DebugService } from '../services/DebugService';
 
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const GEOFENCE_CONFIG_KEY = 'geofence_config';

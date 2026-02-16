@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGeofenceService } from '../../hooks/useGeofenceService';
 import * as TaskManager from 'expo-task-manager';
 import { GEOFENCE_TASK_NAME } from '../../services/GeofenceManager';
+import { DebugLogger } from '../../components/DebugLogger';
+import { DebugService } from '../../services/DebugService';
 
 export default function GeofenceTestScreen() {
   const router = useRouter();
@@ -43,7 +45,9 @@ export default function GeofenceTestScreen() {
   const zonesWithDistances = stats.zonesWithDistances || [];
 
   useEffect(() => {
+    DebugService.lifecycle('GeofenceTestScreen', 'Component mounted');
     checkOsTaskStatus();
+    return () => DebugService.lifecycle('GeofenceTestScreen', 'Component unmounted');
   }, []);
 
   useEffect(() => {
@@ -59,10 +63,15 @@ export default function GeofenceTestScreen() {
   async function checkOsTaskStatus() {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
     setOsTaskStatus(isRegistered);
+    DebugService.geofence('GeofenceTestScreen', 'OS Task status checked', {
+      isRegistered,
+      taskName: GEOFENCE_TASK_NAME
+    });
   }
 
   const handleToggleGeofencing = async () => {
     if (isGeofencingActive) {
+      DebugService.geofence('GeofenceTestScreen', 'User requested to stop geofencing');
       Alert.alert(
         'Stop Geofencing?',
         'Stop monitoring zones?',
@@ -72,19 +81,28 @@ export default function GeofenceTestScreen() {
             text: 'Stop',
             style: 'destructive',
             onPress: async () => {
+              DebugService.geofence('GeofenceTestScreen', 'Stopping geofencing...');
               const result = await stopGeofencing();
               if (result.success) {
                 await checkOsTaskStatus();
+                DebugService.success('GeofenceTestScreen', 'Geofencing stopped successfully');
                 Alert.alert('Stopped', 'Geofencing deactivated');
+              } else {
+                DebugService.error('GeofenceTestScreen', 'Failed to stop geofencing', { error: result.error });
               }
             }
           }
         ]
       );
     } else {
+      DebugService.geofence('GeofenceTestScreen', 'User requested to start geofencing');
       const result = await startGeofencing();
       if (result.success) {
         await checkOsTaskStatus();
+        DebugService.success('GeofenceTestScreen', 'Geofencing started successfully', {
+          zonesCount: result.zonesCount,
+          totalZones: result.zones.length
+        });
         Alert.alert(
           'Geofencing Active! 🎉',
           `Monitoring ${result.zonesCount} zones\n` +
@@ -93,6 +111,7 @@ export default function GeofenceTestScreen() {
           [{ text: 'OK' }]
         );
       } else {
+        DebugService.error('GeofenceTestScreen', 'Failed to start geofencing', { error: result.error });
         Alert.alert('Error', result.error || 'Failed to start');
       }
     }

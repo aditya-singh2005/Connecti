@@ -11,6 +11,8 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import ExpoPushTokenService from '../../services/ExpoPushTokenService';
 import { storeFCMToken } from '../../services/GeofenceManager';
+import { DebugLogger } from '../../components/DebugLogger';
+import { DebugService } from '../../services/DebugService';
 
 const API_URL = 'https://connecti-push-api.vercel.app/api/send-notification';
 
@@ -33,14 +35,17 @@ export default function NotificationTestScreen() {
   const [tokenStatus, setTokenStatus] = useState(null);
 
   useEffect(() => {
+    DebugService.lifecycle('NotificationTestScreen', 'Component mounted');
     let mounted = true;
 
     const initialize = async () => {
       if (!mounted) return;
+      DebugService.info('NotificationTestScreen', 'Initializing notification system');
 
       // Setup notification channels
       await setupNotificationChannels();
       setLocalNotificationsReady(true);
+      DebugService.success('NotificationTestScreen', 'Notification channels ready');
 
       // Get FCM Device Token
       await getFCMDeviceToken();
@@ -48,6 +53,7 @@ export default function NotificationTestScreen() {
       // Get token status
       const status = await ExpoPushTokenService.getStatus();
       setTokenStatus(status);
+      DebugService.info('NotificationTestScreen', 'Token status retrieved', status);
 
       if (mounted) {
         setLoading(false);
@@ -58,10 +64,14 @@ export default function NotificationTestScreen() {
 
     // Setup notification listener
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      DebugService.notification('NotificationTestScreen', 'Notification tapped', {
+        title: response.notification.request.content.title
+      });
       Alert.alert("Notification Tapped", response.notification.request.content.title);
     });
 
     return () => {
+      DebugService.lifecycle('NotificationTestScreen', 'Component unmounted');
       mounted = false;
       subscription.remove();
     };
@@ -164,6 +174,7 @@ export default function NotificationTestScreen() {
 
   async function sendLocalNotification() {
     try {
+      DebugService.notification('NotificationTestScreen', 'Sending local notification');
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '📍 Local Notification',
@@ -174,14 +185,17 @@ export default function NotificationTestScreen() {
         trigger: null,
       });
 
+      DebugService.success('NotificationTestScreen', 'Local notification sent successfully');
       Alert.alert("✅ Success", "Local notification sent! Close app to see it.");
     } catch (error) {
+      DebugService.error('NotificationTestScreen', 'Failed to send local notification', { error: error.message });
       Alert.alert("Error", error.message);
     }
   }
 
   async function sendRemoteNotification() {
     if (!fcmDeviceToken) {
+      DebugService.warn('NotificationTestScreen', 'No FCM token available for remote notification');
       Alert.alert(
         "No FCM Device Token",
         "Remote notifications require FCM Device Token from Google Play Services.\n\n" +
@@ -191,6 +205,12 @@ export default function NotificationTestScreen() {
     }
 
     try {
+      DebugService.notification('NotificationTestScreen', 'Sending remote notification', {
+        title: remoteTitle,
+        body: remoteBody,
+        token: fcmDeviceToken.substring(0, 10) + '...'
+      });
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,14 +220,30 @@ export default function NotificationTestScreen() {
           body: remoteBody,
         }),
       });
-      const result = await response.json();
+
+      const responseText = await response.text();
+      DebugService.notification('NotificationTestScreen', 'API Response received', {
+        status: response.status,
+        text: responseText
+      });
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        DebugService.error('NotificationTestScreen', 'Failed to parse API response', { error: e.message, text: responseText });
+        throw new Error('Invalid JSON response from API');
+      }
 
       if (result.success) {
+        DebugService.success('NotificationTestScreen', 'Remote notification sent successfully');
         Alert.alert("Success ✅", "Remote notification sent! Close the app to see it.");
       } else {
+        DebugService.error('NotificationTestScreen', 'Remote notification failed', { message: result.message, fullResult: result });
         Alert.alert("Error", result.message || "Failed to send notification");
       }
     } catch (error) {
+      DebugService.error('NotificationTestScreen', 'API error sending notification', { error: error.message, stack: error.stack });
       Alert.alert("API Error", error.message);
     }
   }
@@ -522,6 +558,9 @@ export default function NotificationTestScreen() {
           </Text>
         </View>
       </View>
+
+      {/* Debug Logger */}
+      <DebugLogger screenName="NotificationTestScreen" maxLogs={200} initiallyExpanded={false} />
 
       <View style={{ height: 40 }} />
     </ScrollView>

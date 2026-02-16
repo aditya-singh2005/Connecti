@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../../lib/supabase"; // Import Supabase
 import { useAuth } from "../../context/AuthProvider";
+import { DebugLogger } from "../../components/DebugLogger";
+import { DebugService } from "../../services/DebugService";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -27,8 +29,12 @@ export default function HomeScreen() {
 
   // Fetch active matches on mount and focus
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      DebugService.warn('HomeScreen', 'No user ID available', { userId: user?.id });
+      return;
+    }
 
+    DebugService.info('HomeScreen', 'Setting up match monitoring', { userId: user.id });
     fetchActiveMatch();
 
     // 🚀 NEW: Realtime match detection
@@ -44,21 +50,32 @@ export default function HomeScreen() {
         },
         (payload) => {
           console.log('[Home] ⚡ Realtime match update:', payload.new);
+          DebugService.wave('HomeScreen', 'Realtime match update received', {
+            event: payload.eventType,
+            bothNotified: payload.new?.both_notified,
+            matchId: payload.new?.id
+          });
+
           if (payload.new && payload.new.both_notified) {
             // Check staleness before setting
             const matchTime = new Date(payload.new.matched_at).getTime();
             if (Date.now() - matchTime < 60 * 60 * 1000) {
               setActiveMatch(payload.new);
+              DebugService.success('HomeScreen', 'Active match set', { matchId: payload.new.id });
             } else {
               setActiveMatch(null);
+              DebugService.warn('HomeScreen', 'Match too old, cleared', { age: Date.now() - matchTime });
             }
           } else {
             // If both_notified is false or it was deleted, clear it
             setActiveMatch(null);
+            DebugService.info('HomeScreen', 'Match cleared (not both notified)');
           }
         }
       )
       .subscribe();
+
+    DebugService.success('HomeScreen', 'Realtime subscription active');
 
     const interval = setInterval(() => {
       fetchActiveMatch();
@@ -67,11 +84,13 @@ export default function HomeScreen() {
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
+      DebugService.info('HomeScreen', 'Cleanup: Realtime subscription removed');
     };
   }, [user?.id]);
 
   const fetchActiveMatch = async () => {
     try {
+      DebugService.info('HomeScreen', 'Fetching active match...');
       const { data, error } = await supabase
         .from('wave_notification_logs')
         .select('*')
@@ -81,15 +100,27 @@ export default function HomeScreen() {
         .limit(1)
         .single();
 
+      if (error) {
+        DebugService.warn('HomeScreen', 'No active match found', { error: error.message });
+      }
+
       if (data) {
         const matchTime = new Date(data.matched_at).getTime();
-        if (Date.now() - matchTime < 60 * 60 * 1000) {
+        const age = Date.now() - matchTime;
+        if (age < 60 * 60 * 1000) {
           setActiveMatch(data);
+          DebugService.success('HomeScreen', 'Active match found', {
+            matchId: data.id,
+            ageMinutes: Math.round(age / 60000)
+          });
           return;
+        } else {
+          DebugService.warn('HomeScreen', 'Match expired', { ageMinutes: Math.round(age / 60000) });
         }
       }
       setActiveMatch(null);
     } catch (e) {
+      DebugService.error('HomeScreen', 'Error fetching match', { error: e.message });
       setActiveMatch(null);
     }
   };
@@ -116,12 +147,18 @@ export default function HomeScreen() {
   // ✅ FIXED: Auto-start geofencing on mount
   useEffect(() => {
     const init = async () => {
+      DebugService.geofence('HomeScreen', 'Loading recent geofence events');
       await loadRecentEvents();
 
       // 🚀 Explicit Auto-Start
       if (!isGeofencingActive) {
         console.log('[HomeScreen] 🚀 Auto-starting geofencing...');
+        DebugService.geofence('HomeScreen', 'Auto-starting geofencing (not active)');
         startGeofencing();
+      } else {
+        DebugService.success('HomeScreen', 'Geofencing already active', {
+          activeCount: activeGeofences.length
+        });
       }
     };
     init();
@@ -373,6 +410,9 @@ export default function HomeScreen() {
           </Text>
         </View>
       )}
+
+      {/* Debug Logger */}
+      <DebugLogger screenName="HomeScreen" maxLogs={150} initiallyExpanded={false} />
 
       <View style={{ height: 40 }} />
     </ScrollView>
