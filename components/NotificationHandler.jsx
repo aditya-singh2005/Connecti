@@ -142,7 +142,9 @@ export default function NotificationHandler() {
         // Helper: Dismiss notification and collapse panel
         const dismissAndCollapse = async () => {
           try {
-            await Notifications.dismissNotificationAsync(notificationId);
+            if (notificationId) {
+              await Notifications.dismissNotificationAsync(notificationId);
+            }
           } catch (e) {
             console.warn('⚠️ Could not dismiss notification:', e.message);
           }

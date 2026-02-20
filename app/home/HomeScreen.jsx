@@ -138,7 +138,6 @@ export default function HomeScreen() {
     recentEvents,
     nativeSupport,
     loadRecentEvents,
-    startGeofencing, // ✅ Import start function
   } = useGeofenceService();
 
   const [geofenceBadge, setGeofenceBadge] = useState(0);
@@ -150,15 +149,13 @@ export default function HomeScreen() {
       DebugService.geofence('HomeScreen', 'Loading recent geofence events');
       await loadRecentEvents();
 
-      // 🚀 Explicit Auto-Start
-      if (!isGeofencingActive) {
-        console.log('[HomeScreen] 🚀 Auto-starting geofencing...');
-        DebugService.geofence('HomeScreen', 'Auto-starting geofencing (not active)');
-        startGeofencing();
-      } else {
+      // Geofencing startup is handled inside useGeofenceService.
+      if (isGeofencingActive) {
         DebugService.success('HomeScreen', 'Geofencing already active', {
           activeCount: activeGeofences.length
         });
+      } else {
+        DebugService.info('HomeScreen', 'Geofencing startup handled by service hook');
       }
     };
     init();
@@ -176,7 +173,7 @@ export default function HomeScreen() {
 
       // Count killed app events
       const killedCount = recentEvents.filter(event =>
-        event.appKilled === true
+        event.appState === 'killed'
       ).length;
       setKilledEvents(killedCount);
     } else {
@@ -403,10 +400,9 @@ export default function HomeScreen() {
             <Text style={[styles.tipsTitle, { color: '#EF4444' }]}>Native Module Not Available</Text>
           </View>
           <Text style={[styles.tipsText, { color: '#DC2626' }]}>
-            The native geofencing module is not available. {"\n"}
-            Make sure you've rebuilt the app after adding native code.{"\n"}
-            {"\n"}
-            Run: eas build --profile preview --platform android
+            Running on Expo geofencing fallback. {"\n"}
+            Foreground/background should work; killed-state delivery depends on OEM battery restrictions.{"\n"}
+            Disable battery optimization + enable auto-start for best killed-state reliability.
           </Text>
         </View>
       )}

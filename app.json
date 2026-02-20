@@ -79,12 +79,6 @@
           "category": [
             "LAUNCHER"
           ]
-        },
-        {
-          "action": "android.intent.action.BOOT_COMPLETED",
-          "category": [
-            "DEFAULT"
-          ]
         }
       ],
       "foregroundService": {

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 
 const WAVE_TIMER_KEY = 'wave_timer_expiry';
-const WAVE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const WAVE_DURATION_MS = 60 * 60 * 1000; // ✅ PRODUCTION: 60 minutes
 
 let resetTimeout = null;
 

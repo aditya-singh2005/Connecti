@@ -169,6 +169,13 @@ export default function GeofenceTestScreen() {
     });
   };
 
+  const getEventStateLabel = (state) => {
+    if (state === 'foreground') return 'FOREGROUND';
+    if (state === 'background') return 'BACKGROUND';
+    if (state === 'killed') return 'KILLED';
+    return 'UNKNOWN';
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -347,12 +354,24 @@ export default function GeofenceTestScreen() {
                 <View key={index} style={styles.eventRow}>
                   <View style={[
                     styles.eventIcon,
-                    { backgroundColor: event.appState === 'killed' ? '#FEE2E2' : '#E0E7FF' }
+                    {
+                      backgroundColor: event.appState === 'killed'
+                        ? '#FEE2E2'
+                        : event.appState === 'background'
+                          ? '#FEF3C7'
+                          : '#E0E7FF'
+                    }
                   ]}>
                     <Ionicons
                       name={event.appState === 'killed' ? 'flash-off-outline' : 'flash-outline'}
                       size={16}
-                      color={event.appState === 'killed' ? '#EF4444' : '#6366F1'}
+                      color={
+                        event.appState === 'killed'
+                          ? '#EF4444'
+                          : event.appState === 'background'
+                            ? '#F59E0B'
+                            : '#6366F1'
+                      }
                     />
                   </View>
                   <View style={styles.eventInfo}>
@@ -360,7 +379,7 @@ export default function GeofenceTestScreen() {
                       {event.zone}
                     </Text>
                     <Text style={styles.eventMeta}>
-                      {formatTime(event.timestamp)} • {event.appState === 'killed' ? 'Background' : 'Foreground'}
+                      {formatTime(event.timestamp)} • {getEventStateLabel(event.appState)}
                     </Text>
                   </View>
                   <View style={[

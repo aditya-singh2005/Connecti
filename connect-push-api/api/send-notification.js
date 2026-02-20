@@ -32,9 +32,9 @@ export default async function handler(req, res) {
 
   // Only POST allowed
   if (req.method !== 'POST') {
-    return res.status(405).json({ 
+    return res.status(405).json({
       success: false,
-      error: 'Method not allowed. Use POST.' 
+      error: 'Method not allowed. Use POST.'
     });
   }
 
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('❌ Error:', error);
-    
+
     // Detailed error response
     return res.status(500).json({
       success: false,

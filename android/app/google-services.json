@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "738465858364",
+    "project_id": "connecti-dev-8b910",
+    "storage_bucket": "connecti-dev-8b910.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:738465858364:android:f058f920b665cf34ee1439",
+        "android_client_info": {
+          "package_name": "com.aditya.connectiapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWEfnKDeLlBWd6rfdlDiRVF0fOiE1hOV4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

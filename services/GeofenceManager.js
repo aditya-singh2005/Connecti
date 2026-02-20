@@ -23,6 +23,54 @@ const FCM_DEVICE_TOKEN_KEY = 'fcm_device_token';
 const CURRENT_ZONE_KEY = 'current_zone';
 const NOTIFIED_ZONES_KEY = 'notified_zones';
 const SESSION_LAST_ACTIVE_KEY = 'session_last_active';
+const APP_RUNTIME_STATE_KEY = 'app_runtime_state';
+const APP_RUNTIME_STATE_UPDATED_AT_KEY = 'app_runtime_state_updated_at';
+const KILLED_STATE_STALE_MS = 5 * 60 * 1000;
+
+function normalizeExecutionState(appState) {
+  if (appState === 'active' || appState === 'foreground') {
+    return 'foreground';
+  }
+
+  if (appState === 'background' || appState === 'inactive') {
+    return 'background';
+  }
+
+  return 'killed';
+}
+
+async function inferExecutionState(executionInfo) {
+  const runtimeState = normalizeExecutionState(executionInfo?.appState);
+
+  // If Expo explicitly reports active, trust it.
+  if (runtimeState === 'foreground') {
+    return runtimeState;
+  }
+
+  try {
+    const keyValues = await AsyncStorage.multiGet([
+      APP_RUNTIME_STATE_KEY,
+      APP_RUNTIME_STATE_UPDATED_AT_KEY,
+    ]);
+    const runtimeMap = Object.fromEntries(keyValues);
+    const persistedState = runtimeMap[APP_RUNTIME_STATE_KEY];
+    const persistedAt = Number(runtimeMap[APP_RUNTIME_STATE_UPDATED_AT_KEY] || 0);
+    const ageMs = Date.now() - persistedAt;
+
+    if (persistedState === 'active' && ageMs < 20 * 1000) {
+      return 'foreground';
+    }
+
+    if ((persistedState === 'background' || persistedState === 'inactive') && ageMs < KILLED_STATE_STALE_MS) {
+      return 'background';
+    }
+  } catch (stateError) {
+    console.warn('[GeofenceTask] Failed to infer runtime state:', stateError?.message || stateError);
+  }
+
+  // If task woke JS without recent app-state heartbeat, classify as killed/cold-start.
+  return 'killed';
+}
 
 export async function storeFCMToken(token) {
   try {
@@ -71,15 +119,23 @@ export async function setupGeofenceNotificationChannels() {
 }
 
 // ✅ FIXED: Single notification function (no duplicates)
-async function sendSingleNotification(zoneName, distance, timestamp) {
+async function sendSingleNotification(zoneName, distance, timestamp, executionState = 'background') {
   try {
     console.log(`📢 Sending SINGLE notification: ${zoneName}`);
+    const stateLabel = executionState.toUpperCase();
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `📍 Entered ${zoneName}`,
-        body: "Tap 'Wave' to check in! 👋",
-        data: { url: '/home/HomeScreen', zoneName },
+        title: `📍 Entered ${zoneName} [${stateLabel}]`,
+        body: `[${stateLabel}] Tap 'Wave' to check in! 👋`,
+        data: {
+          url: '/home/HomeScreen',
+          zoneName,
+          executionState,
+          source: `geofence_task_${executionState}`,
+          timestamp,
+          distance,
+        },
         categoryIdentifier: 'GEOFENCE_MATCH',
         sound: true,
         priority: Notifications.AndroidNotificationPriority.HIGH,
@@ -116,7 +172,7 @@ async function storeGeofenceEvent(eventData) {
   }
 }
 
-TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
+TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }) => {
   if (error) {
     // Silent fail on error to keep logs clean
     return;
@@ -138,7 +194,8 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
   }
 
   if (eventType === Location.GeofencingEventType.Enter) {
-    console.log(`[BG] ✅ Entered ${zoneName}`);
+    const executionState = await inferExecutionState(executionInfo);
+    console.log(`[GEOFENCE:${executionState.toUpperCase()}] ✅ Entered ${zoneName}`);
 
     const timestamp = new Date().toISOString();
 
@@ -151,7 +208,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       // 🧹 SESSION CLEANUP: Wipe notified zones if stale
       const lastActive = await AsyncStorage.getItem(SESSION_LAST_ACTIVE_KEY);
       const currentTime = new Date().getTime();
-      const STALE_THRESHOLD = 30 * 60 * 1000; // 30 mins
+      const STALE_THRESHOLD = 60 * 60 * 1000; // ✅ PRODUCTION: 60 mins
 
       if (lastActive && (currentTime - parseInt(lastActive) > STALE_THRESHOLD)) {
         console.log('[BG] 🧹 Stale session. Wiping notified zones.');
@@ -179,17 +236,17 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
         return;
       }
 
-      // ✅ NEW: ONE-SHOT CHECK - Don't ask again if neglected
-      const notifiedStr = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
-      let notifiedList = notifiedStr ? JSON.parse(notifiedStr) : [];
-      if (notifiedList.includes(zoneName)) {
-        console.log(`[BG] ⏳ Already prompted for ${zoneName} once, skipping.`);
-        return;
-      }
+      // ✅ TESTING MODE: Disabled ONE-SHOT CHECK to allow re-notifications
+      // const notifiedStr = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
+      // let notifiedList = notifiedStr ? JSON.parse(notifiedStr) : [];
+      // if (notifiedList.includes(zoneName)) {
+      //   console.log(`[BG] ⏳ Already prompted for ${zoneName} once, skipping.`);
+      //   return;
+      // }
 
-      // Add to notified list before sending
-      notifiedList.push(zoneName);
-      await AsyncStorage.setItem(NOTIFIED_ZONES_KEY, JSON.stringify(notifiedList));
+      // Add to notified list before sending (DISABLED FOR TESTING)
+      // notifiedList.push(zoneName);
+      // await AsyncStorage.setItem(NOTIFIED_ZONES_KEY, JSON.stringify(notifiedList));
 
       const eventData = {
         type: 'enter',
@@ -197,9 +254,13 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
         timestamp: timestamp,
         lat: region.latitude,
         lng: region.longitude,
-        appState: 'background', // Assume background for this task
-        source: 'background_task',
+        appState: executionState,
+        source: `geofence_task_${executionState}`,
         notificationSent: false,
+        executionInfo: {
+          appState: executionInfo?.appState || null,
+          eventId: executionInfo?.eventId || null,
+        },
       };
 
       await storeGeofenceEvent(eventData);
@@ -209,8 +270,9 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       const lastSentTime = await AsyncStorage.getItem(outputKey);
       const now = new Date().getTime();
 
-      // REDUCED COOLDOWN: 1 second for testing (was 15s)
-      if (lastSentTime && (now - parseInt(lastSentTime) < 1000)) {
+      // Avoid duplicate notifications caused by rapid repeated ENTER callbacks.
+      const cooldownMs = 60 * 1000;
+      if (lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
         // Silent cooldown return
         return;
       }
@@ -220,7 +282,12 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }) => {
       // ✅ SEND SINGLE INTERACTIVE NOTIFICATION
       // Calculate rough distance just for log/record, or pass 0 if not needed for payload
       const distance = 0; // Payload doesn't strictly need precise distance for the "Wave" message
-      const notificationSent = await sendSingleNotification(zoneName, distance, timestamp);
+      const notificationSent = await sendSingleNotification(
+        zoneName,
+        distance,
+        timestamp,
+        executionState
+      );
 
       eventData.notificationSent = notificationSent;
 
