@@ -1,211 +1,36 @@
 --------- beginning of main
 --------- beginning of system
-02-20 12:03:04.530 I/ReactNativeJS( 7476): Running "main" with {"rootTag":1,"initialProps":{},"fabric":true}
-02-20 12:03:05.080 I/ReactNativeJS( 7476): ✅ GeofenceManager loaded
-02-20 12:03:05.082 I/ReactNativeJS( 7476): '[geofenceTask] Delegating to GeofenceManager for task:', 'CONNECTI_GEOFENCE_TASK'
-02-20 12:03:05.406 I/ReactNativeJS( 7476): ✅ BLE Manager loaded successfully
-02-20 12:03:06.145 I/ReactNativeJS( 7476): ⚙️ BLE Proximity notifications loaded
-02-20 12:03:06.350 I/ReactNativeJS( 7476): ✅ Notification channel ready
-02-20 12:03:06.351 I/ReactNativeJS( 7476): ✅ BLE notification channel created
-02-20 12:03:06.716 I/ReactNativeJS( 7476): 🔄 AuthProvider: Checking initial session...
-02-20 12:03:06.719 I/ReactNativeJS( 7476): === APP STARTED - Connecti ===
-02-20 12:03:06.744 I/ReactNativeJS( 7476): Geofencing task not registered (controller/hook will handle startup)
-02-20 12:03:06.747 I/ReactNativeJS( 7476): '✅ AuthProvider: Initial session found:', 'YES'
-02-20 12:03:06.748 I/ReactNativeJS( 7476): '👤 User:', 'demo@gmail.com'
-02-20 12:03:06.764 I/ReactNativeJS( 7476): '✅ User ID set:', 'd2fed65f-d329-4ac5-bc55-305c04c7df8b'
-02-20 12:03:06.767 I/ReactNativeJS( 7476): 🔍 Setting up notifications...
-02-20 12:03:06.770 I/ReactNativeJS( 7476): User is logged in, checking profile...
-02-20 12:03:06.782 I/ReactNativeJS( 7476): 🔄 AuthProvider: Auth state changed - INITIAL_SESSION
-02-20 12:03:06.782 I/ReactNativeJS( 7476): '📝 Session:', 'EXISTS'
-02-20 12:03:06.802 I/ReactNativeJS( 7476): ✅ Notification channels configured
-02-20 12:03:07.458 I/ReactNativeJS( 7476): Processing 1 pending waves from native
-02-20 12:03:07.469 I/ReactNativeJS( 7476): [Sync] 🌐 Syncing zone home for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:03:07.700 I/ReactNativeJS( 7476): Profile exists, going to home
-02-20 12:03:08.361 I/ReactNativeJS( 7476): '[HomeScreen] [LIFECYCLE] HomeScreen mounted', { timestamp: '12:03:08 pm' }
-02-20 12:03:08.370 I/ReactNativeJS( 7476): '[HomeScreen] [INFO] Setting up match monitoring', { userId: 'd2fed65f-d329-4ac5-bc55-305c04c7df8b' }
-02-20 12:03:08.382 I/ReactNativeJS( 7476): '[HomeScreen] [INFO] Fetching active match...', null
-02-20 12:03:08.425 I/ReactNativeJS( 7476): '[HomeScreen] [SUCCESS] Realtime subscription active', null
-02-20 12:03:08.437 I/ReactNativeJS( 7476): 🚀 useGeofenceService - Initializing
-02-20 12:03:08.448 I/ReactNativeJS( 7476): '[HomeScreen] [GEOFENCE] Loading recent geofence events', null
-02-20 12:03:08.673 I/ReactNativeJS( 7476): 📊 Loaded 26 events
-02-20 12:03:08.677 I/ReactNativeJS( 7476): '[HomeScreen] [INFO] Geofencing startup handled by service hook', null
-02-20 12:03:08.679 I/ReactNativeJS( 7476): ✅ Notification channel ready
-02-20 12:03:08.681 I/ReactNativeJS( 7476): 🔑 Setting up FCM token...
-02-20 12:03:08.689 I/ReactNativeJS( 7476): ✅ Using stored FCM Device Token
-02-20 12:03:08.739 I/ReactNativeJS( 7476): ✅ FCM Token stored
-02-20 12:03:08.739 I/ReactNativeJS( 7476): ✅ FCM token ready
-02-20 12:03:09.556 I/ReactNativeJS( 7476): '✅ User ID set:', 'd2fed65f-d329-4ac5-bc55-305c04c7df8b'
-02-20 12:03:09.632 I/ReactNativeJS( 7476): 🔍 Checking notification preferences...
-02-20 12:03:10.222 I/ReactNativeJS( 7476): 'Subscription status:', 'SUBSCRIBED'
-02-20 12:03:10.307 I/ReactNativeJS( 7476): [Sync] 🌐 Syncing zone home for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:03:10.538 I/ReactNativeJS( 7476): 'Unread message count:', 0
-02-20 12:03:10.540 I/ReactNativeJS( 7476): 'Unread message count:', 0
-02-20 12:03:10.542 I/ReactNativeJS( 7476): '📊 Profile preferences:', { enabled: true, hasToken: false }
-02-20 12:03:10.543 I/ReactNativeJS( 7476): 🔄 Enabling chat notifications...
-02-20 12:03:10.552 I/ReactNativeJS( 7476): ✅ Chat notification channel created
-02-20 12:03:10.561 I/ReactNativeJS( 7476): ✅ Notification permissions granted
-02-20 12:03:10.561 I/ReactNativeJS( 7476): 🔑 Fetching FCM Device Token...
-02-20 12:03:10.562 I/ReactNativeJS( 7476): ✅ Using cached FCM Device Token
-02-20 12:03:10.563 I/ReactNativeJS( 7476): ✅ FCM Device Token obtained successfully
-02-20 12:03:10.563 I/ReactNativeJS( 7476): 📝 Token preview: {"fcmToken":"cKED0LcnTWGiV3ncqANtD9:APA91bGrEkYULH...
-02-20 12:03:10.565 I/ReactNativeJS( 7476): 💾 Saving FCM Device Token to database...
-02-20 12:03:10.704 I/ReactNativeJS( 7476): 'Unread message count:', 0
-02-20 12:03:10.742 I/ReactNativeJS( 7476): '🔢 Badge count updated:', 0
-02-20 12:03:10.766 I/ReactNativeJS( 7476): [Sync] ✅ Successfully synced presence in home (Open: false)
-02-20 12:03:10.766 I/ReactNativeJS( 7476): 'Synced pending native wave for zone:', 'home'
-02-20 12:03:10.788 W/ReactNativeJS( 7476): '[HomeScreen] [WARN] Match expired', { ageMinutes: 5132 }
-02-20 12:03:11.058 I/ReactNativeJS( 7476): ✅ FCM Device Token saved to database
-02-20 12:03:11.059 I/ReactNativeJS( 7476): 🔔 Setting up realtime subscription...
-02-20 12:03:11.068 I/ReactNativeJS( 7476): ✅ Chat notifications enabled with FCM Device Token
-02-20 12:03:11.222 I/ReactNativeJS( 7476): '📡 Subscription status:', 'SUBSCRIBED'
-02-20 12:03:11.273 I/ReactNativeJS( 7476): [Sync] ✅ Successfully synced presence in home (Open: false)
-02-20 12:03:11.301 I/ReactNativeJS( 7476): 📊 Loaded 26 events
-02-20 12:03:11.361 I/ReactNativeJS( 7476): ℹ️ Geofencing state restored
-02-20 12:03:11.436 I/ReactNativeJS( 7476): ℹ️ Currently registered geofences: 18
-02-20 12:03:11.450 I/ReactNativeJS( 7476): 📍 Starting location monitoring...
-02-20 12:03:11.598 I/ReactNativeJS( 7476): ✅ Location monitoring active (every 2s or 5m)
-02-20 12:03:12.271 I/ReactNativeJS( 7476): 'Unread message count:', 0
-02-20 12:03:12.609 I/ReactNativeJS( 7476): Realtime not available, using AppState fallback
-02-20 12:03:12.617 I/ReactNativeJS( 7476): 🔄 Updating zones (moved >300m)...
-02-20 12:03:12.619 I/ReactNativeJS( 7476): 🔍 Fetching zones near: 28.677055, 77.300953
-02-20 12:03:12.973 I/ReactNativeJS( 7476): ✅ Found 18 zones
-02-20 12:03:12.973 I/ReactNativeJS( 7476): ✅ Found 18 nearby zones
-02-20 12:03:12.976 I/ReactNativeJS( 7476): 📍 Registering 18 native geofences...
-02-20 12:03:13.285 I/NativeGeofenceModule( 7476): registerGeofences success: 18 geofences
-02-20 12:03:13.286 I/ReactNativeJS( 7476): ✅ Successfully registered 18 native geofences
-02-20 12:03:13.290 I/ReactNativeJS( 7476): ✅ Updated 18 native geofences
-02-20 12:03:17.128 I/GeofenceReceiver( 7476): Received geofence ENTER for 1 geofence(s)
-02-20 12:03:17.129 I/GeofenceReceiver( 7476): Posting native notification for zone=home source=foreground
-02-20 12:03:23.452 I/ReactNativeJS( 7476): '[HomeScreen] [INFO] Fetching active match...', null
-02-20 12:03:23.732 W/ReactNativeJS( 7476): '[HomeScreen] [WARN] Match expired', { ageMinutes: 5132 }
-02-20 12:03:26.228 I/ReactNativeJS( 7476): ✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED
-02-20 12:03:26.513 I/ReactNativeJS( 7476): 🔔 Chat notifications enabled, getting FCM token...
-02-20 12:03:26.526 I/ReactNativeJS( 7476): ✅ Using stored FCM Device Token
-02-20 12:03:26.816 I/ReactNativeJS( 7476): ✅ Push tokens saved to database
-02-20 12:03:26.819 I/ReactNativeJS( 7476): ✅ Remote notifications fully enabled!
-02-20 12:03:38.461 I/ReactNativeJS( 7476): '[HomeScreen] [INFO] Fetching active match...', null
-02-20 12:03:38.821 W/ReactNativeJS( 7476): '[HomeScreen] [WARN] Match expired', { ageMinutes: 5132 }
-02-20 12:03:40.105 I/ReactNativeJS( 7476): '[HomeScreen] [APP_STATE] App state changed: active → background', { from: 'active', to: 'background', timestamp: '12:03:40 pm' }
-02-20 12:03:40.109 I/ReactNativeJS( 7476): '📱 App state changed:', 'active', '→', 'background'
-02-20 12:03:40.143 I/ReactNativeJS( 7476): 📱 App went to background
-02-20 12:04:02.145 I/ReactNativeJS( 7476): 🎯 NEW ZONE ENTRY: GTB Hospital 🎯
-02-20 12:04:02.146 I/ReactNativeJS( 7476): Distance from center: 138m
-02-20 12:04:02.655 I/GeofenceReceiver( 7476): Received geofence ENTER for 1 geofence(s)
-02-20 12:04:02.655 I/GeofenceReceiver( 7476): Posting native notification for zone=GTB Hospital source=background
-02-20 12:04:38.977 I/ReactNativeJS( 7476): 'Subscription status:', 'CHANNEL_ERROR'
-02-20 12:04:38.981 I/ReactNativeJS( 7476): '📡 Subscription status:', 'CHANNEL_ERROR'
-02-20 12:06:39.075 I/ReactNativeJS( 7476): 🚪 Left zone: home
-02-20 12:06:39.207 I/ReactNativeJS( 7476): 🔄 Updating zones (moved >300m)...
-02-20 12:06:39.208 I/ReactNativeJS( 7476): 🔍 Fetching zones near: 28.483400, 77.089500
-02-20 12:07:54.584 I/ReactNativeJS( 7476): 🎯 NEW ZONE ENTRY: India Gate 🎯
-02-20 12:07:54.585 I/ReactNativeJS( 7476): Distance from center: 0m
-02-20 12:08:01.276 I/GeofenceReceiver( 7476): Received geofence ENTER for 1 geofence(s)
-02-20 12:08:01.278 I/GeofenceReceiver( 7476): Posting native notification for zone=India Gate source=background
-02-20 12:09:54.670 I/GeofenceReceiver(12049): Received geofence ENTER for 1 geofence(s)
-02-20 12:09:54.682 I/GeofenceReceiver(12049): Posting native notification for zone=Vivek Vihar Market source=killed
-02-20 12:11:21.839 I/ReactNativeJS(12049): Running "main" with {"rootTag":1,"initialProps":{},"fabric":true}
-02-20 12:11:22.403 I/ReactNativeJS(12049): ✅ GeofenceManager loaded
-02-20 12:11:22.405 I/ReactNativeJS(12049): '[geofenceTask] Delegating to GeofenceManager for task:', 'CONNECTI_GEOFENCE_TASK'
-02-20 12:11:22.719 I/ReactNativeJS(12049): ✅ BLE Manager loaded successfully
-02-20 12:11:23.481 I/ReactNativeJS(12049): ⚙️ BLE Proximity notifications loaded
-02-20 12:11:23.690 I/ReactNativeJS(12049): ✅ Notification channel ready
-02-20 12:11:23.691 I/ReactNativeJS(12049): ✅ BLE notification channel created
-02-20 12:11:24.027 I/ReactNativeJS(12049): 🔄 AuthProvider: Checking initial session...
-02-20 12:11:24.030 I/ReactNativeJS(12049): === APP STARTED - Connecti ===
-02-20 12:11:24.052 I/ReactNativeJS(12049): Geofencing task not registered (controller/hook will handle startup)
-02-20 12:11:24.057 I/ReactNativeJS(12049): '✅ AuthProvider: Initial session found:', 'YES'
-02-20 12:11:24.057 I/ReactNativeJS(12049): '👤 User:', 'demo@gmail.com'
-02-20 12:11:24.072 I/ReactNativeJS(12049): 🔄 AuthProvider: Auth state changed - INITIAL_SESSION
-02-20 12:11:24.072 I/ReactNativeJS(12049): '📝 Session:', 'EXISTS'
-02-20 12:11:24.074 I/ReactNativeJS(12049): '✅ User ID set:', 'd2fed65f-d329-4ac5-bc55-305c04c7df8b'
-02-20 12:11:24.076 I/ReactNativeJS(12049): 🔍 Setting up notifications...
-02-20 12:11:24.079 I/ReactNativeJS(12049): User is logged in, checking profile...
-02-20 12:11:24.112 I/ReactNativeJS(12049): ✅ Notification channels configured
-02-20 12:11:24.477 I/ReactNativeJS(12049): ✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED
-02-20 12:11:27.883 I/ReactNativeJS(12049): 'Notification tapped:', {}
-02-20 12:11:27.888 I/ReactNativeJS(12049): '👆 Notification Response Received:', 'expo.modules.notifications.actions.DEFAULT'
-02-20 12:11:27.891 I/ReactNativeJS(12049): 👆 Body Tapped
-02-20 12:11:27.894 I/ReactNativeJS(12049): 📱 App became active - checking for FCM token
-02-20 12:11:27.896 I/ReactNativeJS(12049): 🔄 Force retrying FCM token fetch...
-02-20 12:11:27.927 I/ReactNativeJS(12049): 🔑 Fetching FCM Device Push Token...
-02-20 12:11:27.938 I/ReactNativeJS(12049): Processing 4 pending waves from native
-02-20 12:11:27.942 I/ReactNativeJS(12049): [Sync] 🌐 Syncing zone home for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:11:27.958 I/ReactNativeJS(12049): ✅ Notification permissions granted
-02-20 12:11:27.958 I/ReactNativeJS(12049): 📡 Requesting push tokens...
-02-20 12:11:27.959 I/ReactNativeJS(12049): 📡 Fetching Native FCM Token...
-02-20 12:11:27.963 I/ReactNativeJS(12049): 📡 Fetching Expo Push Token...
-02-20 12:11:28.574 I/ReactNativeJS(12049): '[HomeScreen] [LIFECYCLE] HomeScreen mounted', { timestamp: '12:11:28 pm' }
-02-20 12:11:28.579 I/ReactNativeJS(12049): '[HomeScreen] [INFO] Setting up match monitoring', { userId: 'd2fed65f-d329-4ac5-bc55-305c04c7df8b' }
-02-20 12:11:28.585 I/ReactNativeJS(12049): '[HomeScreen] [INFO] Fetching active match...', null
-02-20 12:11:28.611 I/ReactNativeJS(12049): '[HomeScreen] [SUCCESS] Realtime subscription active', null
-02-20 12:11:28.617 I/ReactNativeJS(12049): 🚀 useGeofenceService - Initializing
-02-20 12:11:28.626 I/ReactNativeJS(12049): '[HomeScreen] [GEOFENCE] Loading recent geofence events', null
-02-20 12:11:28.945 I/ReactNativeJS(12049): 📊 Loaded 26 events
-02-20 12:11:28.949 I/ReactNativeJS(12049): '[HomeScreen] [INFO] Geofencing startup handled by service hook', null
-02-20 12:11:28.949 I/ReactNativeJS(12049): ✅ Notification channel ready
-02-20 12:11:28.951 I/ReactNativeJS(12049): 🔑 Setting up FCM token...
-02-20 12:11:28.997 I/ReactNativeJS(12049): ℹ️ Rate limited - wait 29s
-02-20 12:11:29.074 I/ReactNativeJS(12049): 📊 Loaded 26 events
-02-20 12:11:29.130 I/ReactNativeJS(12049): ℹ️ Geofencing state restored
-02-20 12:11:29.214 I/ReactNativeJS(12049): ℹ️ Currently registered geofences: 18
-02-20 12:11:29.233 I/ReactNativeJS(12049): 📍 Starting location monitoring...
-02-20 12:11:29.234 I/ReactNativeJS(12049): ✅ Tokens obtained successfully!
-02-20 12:11:29.316 I/ReactNativeJS(12049): Profile exists, going to home
-02-20 12:11:29.430 I/ReactNativeJS(12049): 🔔 Chat notifications enabled, getting FCM token...
-02-20 12:11:29.432 I/ReactNativeJS(12049): ✅ Using cached FCM Device Token
-02-20 12:11:29.507 I/ReactNativeJS(12049): ✅ Location monitoring active (every 2s or 5m)
-02-20 12:11:30.397 I/ReactNativeJS(12049): '✅ User ID set:', 'd2fed65f-d329-4ac5-bc55-305c04c7df8b'
-02-20 12:11:30.499 I/ReactNativeJS(12049): 🔍 Checking notification preferences...
-02-20 12:11:30.569 I/ReactNativeJS(12049): 🎯 NEW ZONE ENTRY: home 🎯
-02-20 12:11:30.569 I/ReactNativeJS(12049): Distance from center: 22m
-02-20 12:11:30.902 I/ReactNativeJS(12049): 'Subscription status:', 'SUBSCRIBED'
-02-20 12:11:31.947 I/ReactNativeJS(12049): '📊 Profile preferences:', { enabled: true, hasToken: false }
-02-20 12:11:31.950 I/ReactNativeJS(12049): 🔄 Enabling chat notifications...
-02-20 12:11:31.961 I/ReactNativeJS(12049): ✅ Chat notification channel created
-02-20 12:11:31.967 I/ReactNativeJS(12049): ✅ Notification permissions granted
-02-20 12:11:31.968 I/ReactNativeJS(12049): 🔑 Fetching FCM Device Token...
-02-20 12:11:32.109 I/ReactNativeJS(12049): ✅ Using stored FCM Device Token
-02-20 12:11:32.110 I/ReactNativeJS(12049): ✅ FCM Device Token obtained successfully
-02-20 12:11:32.110 I/ReactNativeJS(12049): 📝 Token preview: {"fcmToken":"cKED0LcnTWGiV3ncqANtD9:APA91bGrEkYULH...
-02-20 12:11:32.113 I/ReactNativeJS(12049): 💾 Saving FCM Device Token to database...
-02-20 12:11:32.214 I/ReactNativeJS(12049): [Sync] 🌐 Syncing zone home for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:11:32.284 I/ReactNativeJS(12049): ✅ Tokens obtained on retry!
-02-20 12:11:32.311 I/ReactNativeJS(12049): ✅ Push tokens saved to database
-02-20 12:11:32.312 I/ReactNativeJS(12049): ✅ Remote notifications fully enabled!
-02-20 12:11:32.880 I/ReactNativeJS(12049): 'Unread message count:', 0
-02-20 12:11:32.884 I/ReactNativeJS(12049): 'Unread message count:', 0
-02-20 12:11:32.902 I/ReactNativeJS(12049): 'Unread message count:', 0
-02-20 12:11:32.930 I/ReactNativeJS(12049): '🔢 Badge count updated:', 0
-02-20 12:11:33.284 I/ReactNativeJS(12049): [Sync] ✅ Successfully synced presence in home (Open: false)
-02-20 12:11:33.285 I/ReactNativeJS(12049): 'Synced pending native wave for zone:', 'home'
-02-20 12:11:33.286 I/ReactNativeJS(12049): [Sync] 🌐 Syncing zone GTB Hospital for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:11:33.289 I/ReactNativeJS(12049): ✅ FCM Device Token saved to database
-02-20 12:11:33.290 I/ReactNativeJS(12049): 🔔 Setting up realtime subscription...
-02-20 12:11:33.301 I/ReactNativeJS(12049): ✅ Chat notifications enabled with FCM Device Token
-02-20 12:11:33.328 W/ReactNativeJS(12049): '[HomeScreen] [WARN] Match expired', { ageMinutes: 5140 }
-02-20 12:11:33.445 I/ReactNativeJS(12049): '📡 Subscription status:', 'SUBSCRIBED'
-02-20 12:11:34.149 I/ReactNativeJS(12049): [Sync] ✅ Successfully synced presence in home (Open: false)
-02-20 12:11:34.149 I/ReactNativeJS(12049): [FG] Native geofencing active, skipping JS foreground notification
-02-20 12:11:34.220 I/ReactNativeJS(12049): 🔄 Updating zones (moved >300m)...
-02-20 12:11:34.222 I/ReactNativeJS(12049): 🔍 Fetching zones near: 28.677067, 77.301053
-02-20 12:11:34.426 I/ReactNativeJS(12049): 'Unread message count:', 0
-02-20 12:11:34.479 I/ReactNativeJS(12049): [Sync] ✅ Successfully synced presence in GTB Hospital (Open: false)
-02-20 12:11:34.481 I/ReactNativeJS(12049): 'Synced pending native wave for zone:', 'GTB Hospital'
-02-20 12:11:34.483 I/ReactNativeJS(12049): [Sync] 🌐 Syncing zone India Gate for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:11:34.642 I/ReactNativeJS(12049): Realtime not available, using AppState fallback
-02-20 12:11:34.903 I/ReactNativeJS(12049): ✅ Found 18 zones
-02-20 12:11:34.904 I/ReactNativeJS(12049): ✅ Found 18 nearby zones
-02-20 12:11:34.912 I/ReactNativeJS(12049): 📍 Registering 18 native geofences...
-02-20 12:11:35.052 I/GeofenceReceiver(12049): Received geofence ENTER for 1 geofence(s)
-02-20 12:11:35.053 I/GeofenceReceiver(12049): Posting native notification for zone=home source=foreground
-02-20 12:11:35.210 I/NativeGeofenceModule(12049): registerGeofences success: 18 geofences
-02-20 12:11:35.212 I/ReactNativeJS(12049): ✅ Successfully registered 18 native geofences
-02-20 12:11:35.216 I/ReactNativeJS(12049): ✅ Updated 18 native geofences
-02-20 12:11:35.359 I/ReactNativeJS(12049): [Sync] ✅ Successfully synced presence in India Gate (Open: false)
-02-20 12:11:35.360 I/ReactNativeJS(12049): 'Synced pending native wave for zone:', 'India Gate'
-02-20 12:11:35.361 I/ReactNativeJS(12049): [Sync] 🌐 Syncing zone Vivek Vihar Market for user d2fed65f-d329-4ac5-bc55-305c04c7df8b
-02-20 12:11:35.961 I/ReactNativeJS(12049): [Sync] ✅ Successfully synced presence in Vivek Vihar Market (Open: false)
-02-20 12:11:35.962 I/ReactNativeJS(12049): 'Synced pending native wave for zone:', 'Vivek Vihar Market'
-02-20 12:11:36.720 I/ReactNativeJS(12049): '[HomeScreen] [APP_STATE] App state changed: active → background', { from: 'active', to: 'background', timestamp: '12:11:36 pm' }
-02-20 12:11:36.722 I/ReactNativeJS(12049): '📱 App state changed:', 'active', '→', 'background'
-02-20 12:11:36.764 I/ReactNativeJS(12049): 📱 App went to background
+02-23 14:48:35.902 I/GeofenceReceiver(10949): 📡 Received geofence ENTER for 1 geofence(s)
+02-23 14:48:35.910 I/GeofenceReceiver(10949): 🔔 Showing notification for zone=V3S Mall source=background
+02-23 14:48:35.935 I/GeofenceReceiver(10949): ✅ Notification shown for zone=V3S Mall [BACKGROUND]
+02-23 14:49:42.255 I/GeofenceReceiver(10949): 🔔 Showing notification for zone=V3S Mall source=poll
+02-23 14:49:42.271 I/GeofenceReceiver(10949): ✅ Notification shown for zone=V3S Mall [POLL]
+02-23 14:50:54.284 I/GeofenceReceiver(13764): 🔔 Showing notification for zone=V3S Mall source=poll
+02-23 14:50:54.301 I/GeofenceReceiver(13764): ✅ Notification shown for zone=V3S Mall [POLL]
+02-23 14:51:45.028 I/GeofenceReceiver(15542): 📡 Received geofence ENTER for 1 geofence(s)
+02-23 14:51:45.054 I/GeofenceReceiver(15542): 🔔 Showing notification for zone=GTB Hospital source=background
+02-23 14:51:45.076 I/GeofenceReceiver(15542): ✅ Notification shown for zone=GTB Hospital [BACKGROUND]
+02-23 14:51:46.367 I/GeofenceReceiver(15542): 🔔 Showing notification for zone=home source=poll
+02-23 14:51:46.389 I/GeofenceReceiver(15542): ✅ Notification shown for zone=home [POLL]
+02-23 14:51:46.390 I/GeofenceReceiver(15542): 🔔 Showing notification for zone=Shahdara Metro Station source=poll
+02-23 14:51:46.408 I/GeofenceReceiver(15542): ✅ Notification shown for zone=Shahdara Metro Station [POLL]
+02-23 14:52:56.825 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=home source=poll
+02-23 14:52:56.846 I/GeofenceReceiver(19205): ✅ Notification shown for zone=home [POLL]
+02-23 14:52:56.847 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=Shahdara Metro Station source=poll
+02-23 14:52:56.859 I/GeofenceReceiver(19205): ✅ Notification shown for zone=Shahdara Metro Station [POLL]
+02-23 14:52:56.861 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=GTB Hospital source=poll
+02-23 14:52:56.872 I/GeofenceReceiver(19205): ✅ Notification shown for zone=GTB Hospital [POLL]
+02-23 14:53:53.874 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=home source=poll
+02-23 14:53:53.890 I/GeofenceReceiver(19205): ✅ Notification shown for zone=home [POLL]
+02-23 14:53:53.892 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=Shahdara Metro Station source=poll
+02-23 14:53:53.909 I/GeofenceReceiver(19205): ✅ Notification shown for zone=Shahdara Metro Station [POLL]
+02-23 14:53:53.910 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=GTB Hospital source=poll
+02-23 14:53:53.924 I/GeofenceReceiver(19205): ✅ Notification shown for zone=GTB Hospital [POLL]
+02-23 14:54:48.669 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=home source=poll
+02-23 14:54:48.679 I/GeofenceReceiver(19205): ✅ Notification shown for zone=home [POLL]
+02-23 14:54:48.680 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=GTB Hospital source=poll
+02-23 14:54:48.693 I/GeofenceReceiver(19205): ✅ Notification shown for zone=GTB Hospital [POLL]
+02-23 14:55:54.264 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=home source=poll
+02-23 14:55:54.286 I/GeofenceReceiver(19205): ✅ Notification shown for zone=home [POLL]
+02-23 14:55:54.289 I/GeofenceReceiver(19205): 🔔 Showing notification for zone=GTB Hospital source=poll
+02-23 14:55:54.312 I/GeofenceReceiver(19205): ✅ Notification shown for zone=GTB Hospital [POLL]

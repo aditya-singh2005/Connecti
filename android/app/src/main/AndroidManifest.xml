@@ -62,6 +62,17 @@
       </intent-filter>
     </activity>
     <receiver android:name=".GeofenceBroadcastReceiver" android:enabled="true" android:exported="false"/>
+    <receiver android:name=".WaveActionReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.aditya.connectiapp.ACTION_WAVE"/>
+        <action android:name="com.aditya.connectiapp.ACTION_LATER"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name=".ZonePollReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.aditya.connectiapp.ACTION_ZONE_POLL"/>
+      </intent-filter>
+    </receiver>
     <receiver android:name=".BootCompletedReceiver" android:enabled="true" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>

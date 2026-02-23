@@ -20,6 +20,10 @@ const APP_RUNTIME_STATE_KEY = 'app_runtime_state';
 const APP_RUNTIME_STATE_UPDATED_AT_KEY = 'app_runtime_state_updated_at';
 const SESSION_LAST_ACTIVE_KEY = 'session_last_active';
 
+// Supabase constants (mirrored here so we can pass them to native for killed-state REST)
+const SUPABASE_URL = 'https://qczxsjfkjpcvjbqvcqbc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjenhzamZranBjdmpicXZjcWJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4OTE1ODIsImV4cCI6MjA3MjQ2NzU4Mn0.B4LAlYkS4U1dYjph6QdexQmKFhIyBG69Dg6C3VmGeeY';
+
 export default function RootLayout() {
   const persistRuntimeState = async (state) => {
     const timestamp = Date.now().toString();
@@ -75,30 +79,91 @@ export default function RootLayout() {
       // Process any waves that occurred while app was killed/backgrounded.
       try {
         if (Platform.OS === 'android' && NativeModules?.NativeGeofenceModule) {
-          const waves = await NativeModules.NativeGeofenceModule.getPendingWaves();
+          const nativeMod = NativeModules.NativeGeofenceModule;
+
+          // 1. Drain old-style pending waves (zone entry presence sync)
+          const waves = await nativeMod.getPendingWaves();
           if (waves && waves.length > 0) {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-              console.warn('Pending waves detected but no authenticated user available');
-              return;
-            }
-
-            console.log(`Processing ${waves.length} pending waves from native`);
-            for (const wave of waves) {
-              try {
-                await WaveService.syncUserZone(user.id, wave.zoneId, null);
-                console.log('Synced pending native wave for zone:', wave.zoneId);
-              } catch (err) {
-                console.warn('Failed to sync pending wave:', wave, err.message || err);
+            if (user) {
+              console.log(`Processing ${waves.length} pending waves from native`);
+              for (const wave of waves) {
+                try {
+                  await WaveService.syncUserZone(user.id, wave.zoneId, null);
+                  console.log('Synced pending native wave for zone:', wave.zoneId);
+                } catch (err) {
+                  console.warn('Failed to sync pending wave:', wave, err.message || err);
+                }
               }
             }
           }
+
+          // 2. Drain pending Wave/Later actions from notification buttons (killed state)
+          await drainNativePendingActions();
+
+          // 3. Store Supabase creds so next killed-state Wave can call REST directly
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && nativeMod.storeSupabaseCreds) {
+              await nativeMod.storeSupabaseCreds(SUPABASE_URL, SUPABASE_ANON_KEY, user.id);
+              console.log('✅ Supabase creds stored in native SharedPreferences');
+            }
+          } catch (credErr) {
+            console.warn('Could not store Supabase creds in native:', credErr?.message || credErr);
+          }
+
+          // 4. Start zone poll (10s for testing)
+          try {
+            if (nativeMod.startZonePoll) {
+              await nativeMod.startZonePoll();
+              console.log('✅ Zone poll AlarmManager started');
+            }
+          } catch (pollErr) {
+            console.warn('Could not start zone poll:', pollErr?.message || pollErr);
+          }
         }
       } catch (err) {
-        console.warn('Error while processing pending waves:', err.message || err);
+        console.warn('Error while processing native startup queue:', err.message || err);
       }
     } catch (error) {
       console.error('App initialization error:', error);
+    }
+  }
+
+  /**
+   * Drain the pending-action queue from WaveActionReceiver (killed-state taps).
+   * Called on startup and on every foreground resume.
+   */
+  async function drainNativePendingActions() {
+    try {
+      const nativeMod = NativeModules?.NativeGeofenceModule;
+      if (!nativeMod?.getPendingActions) return;
+
+      const actions = await nativeMod.getPendingActions();
+      if (!actions || actions.length === 0) return;
+
+      console.log(`[drainNative] Processing ${actions.length} pending native actions`);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn('[drainNative] No authed user, cannot process pending actions');
+        return;
+      }
+
+      for (const act of actions) {
+        try {
+          if (act.action === 'WAVE') {
+            console.log(`[drainNative] 🌊 Processing WAVE for zone ${act.zoneId}`);
+            await WaveService.setOpenToWave(user.id, act.zoneId);
+          } else if (act.action === 'LATER') {
+            console.log(`[drainNative] ⏳ Processing LATER for zone ${act.zoneId}`);
+            await WaveService.setLaterForZone(act.zoneId);
+          }
+        } catch (actErr) {
+          console.warn('[drainNative] Failed to process action', act, actErr?.message || actErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[drainNative] Error draining pending native actions:', err?.message || err);
     }
   }
 

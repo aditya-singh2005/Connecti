@@ -1,6 +1,6 @@
-// components/NotificationHandler.jsx - FIXED WITH FCM DEVICE TOKENS
+// components/NotificationHandler.jsx - Wave/Later action buttons + pending-action drain
 import { useEffect, useRef } from 'react';
-import { Platform, AppState } from 'react-native';
+import { Platform, AppState, NativeModules } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { supabase } from '../lib/supabase';
@@ -50,11 +50,11 @@ export default function NotificationHandler() {
     };
   }, [user?.id]);
 
-  const handleAppStateChange = (nextAppState) => {
+  const handleAppStateChange = async (nextAppState) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      console.log('📱 App became active - checking for FCM token');
-      // Retry getting token if we don't have one
+      console.log('📱 App became active - checking for FCM token and pending actions');
       retryFCMToken();
+      await drainPendingNativeActions();
     }
     appState.current = nextAppState;
   };
@@ -179,9 +179,11 @@ export default function NotificationHandler() {
           }, 100);
         }
 
-        // 2. LATER (From Zone Entry)
+        // 2. LATER (From Zone Entry) - suppress this zone for the rest of today
         else if (actionId === 'LATER') {
-          console.log('👋 LATER clicked');
+          console.log('⏳ LATER clicked - suppressing zone for today');
+          const zoneName = data?.zoneName || data?.zoneId || 'Unknown Zone';
+          await WaveService.setLaterForZone(zoneName);
           await dismissAndCollapse();
         }
 
@@ -370,6 +372,41 @@ export default function NotificationHandler() {
       }
     } catch (error) {
       console.log('⚠️ Retry error:', error.message);
+    }
+  }
+
+  /**
+   * Drain pending WAVE/LATER actions from the native SharedPreferences queue.
+   * Called when the app comes to the foreground (in case the user tapped a
+   * notification button while the app was backgrounded or killed).
+   */
+  async function drainPendingNativeActions() {
+    try {
+      const nativeMod = NativeModules?.NativeGeofenceModule;
+      if (!nativeMod?.getPendingActions) return;
+
+      const actions = await nativeMod.getPendingActions();
+      if (!actions || actions.length === 0) return;
+
+      console.log(`[NotifHandler] Processing ${actions.length} pending native actions`);
+      const { data: { user: curUser } } = await supabase.auth.getUser();
+      if (!curUser) return;
+
+      for (const act of actions) {
+        try {
+          if (act.action === 'WAVE') {
+            console.log(`[NotifHandler] 🌊 WAVE from native for zone ${act.zoneId}`);
+            await WaveService.setOpenToWave(curUser.id, act.zoneId);
+          } else if (act.action === 'LATER') {
+            console.log(`[NotifHandler] ⏳ LATER from native for zone ${act.zoneId}`);
+            await WaveService.setLaterForZone(act.zoneId);
+          }
+        } catch (actErr) {
+          console.warn('[NotifHandler] Failed to process action', act, actErr?.message || actErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[NotifHandler] Error draining native pending actions:', err?.message || err);
     }
   }
 

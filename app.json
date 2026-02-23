@@ -199,7 +199,8 @@
             "extraProguardRules": "-keep class expo.modules.location.** { *; }",
             "minSdkVersion": 26,
             "compileSdkVersion": 35,
-            "targetSdkVersion": 34
+            "targetSdkVersion": 34,
+            "ndkVersion": "27.1.12297006"
           }
         }
       ],

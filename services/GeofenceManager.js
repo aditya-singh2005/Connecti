@@ -270,10 +270,17 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
       const lastSentTime = await AsyncStorage.getItem(outputKey);
       const now = new Date().getTime();
 
-      // Avoid duplicate notifications caused by rapid repeated ENTER callbacks.
-      const cooldownMs = 60 * 1000;
+      // TESTING MODE: 10s cooldown. Change to 60 * 1000 for production.
+      const cooldownMs = 10 * 1000;
       if (lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
         // Silent cooldown return
+        return;
+      }
+
+      // ✅ CHECK LATER SUPPRESSION
+      const isLater = await WaveService.isLaterSuppressed(zoneName);
+      if (isLater) {
+        console.log(`[BG] ⏳ Zone "${zoneName}" suppressed for today via Later`);
         return;
       }
 
