@@ -1,5 +1,5 @@
 // app/home/HomeScreen.jsx - FIXED VERSION
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 // import { LinearGradient } from 'expo-linear-gradient'; // REMOVED
 import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useFriendships } from "../../hooks/useFriendships";
 import { useGeofenceService } from "../../hooks/useGeofenceService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +27,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const [activeMatch, setActiveMatch] = useState(null);
+  const notifiedMatchIds = useRef(new Set());
 
   // Fetch active matches on mount and focus
   useEffect(() => {
@@ -43,33 +45,34 @@ export default function HomeScreen() {
       .on(
         'postgres_changes',
         {
-          event: '*', // Listen to INSERT/UPDATE to catch matches and status changes
           schema: 'public',
           table: 'wave_notification_logs',
-          filter: `or(user1_id.eq.${user.id},user2_id.eq.${user.id})`
         },
         (payload) => {
-          console.log('[Home] ⚡ Realtime match update:', payload.new);
-          DebugService.wave('HomeScreen', 'Realtime match update received', {
-            event: payload.eventType,
-            bothNotified: payload.new?.both_notified,
-            matchId: payload.new?.id
-          });
+          if (!payload.new) return;
 
-          if (payload.new && payload.new.both_notified) {
-            // Check staleness before setting
-            const matchTime = new Date(payload.new.matched_at).getTime();
-            if (Date.now() - matchTime < 60 * 60 * 1000) {
-              setActiveMatch(payload.new);
-              DebugService.success('HomeScreen', 'Active match set', { matchId: payload.new.id });
-            } else {
-              setActiveMatch(null);
-              DebugService.warn('HomeScreen', 'Match too old, cleared', { age: Date.now() - matchTime });
-            }
+          // ✅ MANUAL FILTER: Since supabase realtime doesn't support .or() filters
+          const isParticipant = payload.new.user1_id === user.id || payload.new.user2_id === user.id;
+          if (!isParticipant) return;
+
+          console.log('[Home] ⚡ Realtime match update:', payload.new.id);
+
+          const isRevealed = payload.new.revealed_at !== null;
+          // ✅ RELAXED: Handle hint as soon as it involves the current user
+          // Note: isParticipant already defined above in manual filter
+          const isHintMatch = isParticipant && !isRevealed;
+
+          // Check staleness (30 min)
+          const matchTime = new Date(payload.new.matched_at).getTime();
+          if (Date.now() - matchTime > 30 * 60 * 1000) return;
+
+          if (isHintMatch || isRevealed) {
+            setActiveMatch(payload.new);
+
+            // 🚀 Mark as notified in DB to suppress server push
+            markMatchAsNotified(payload.new);
           } else {
-            // If both_notified is false or it was deleted, clear it
             setActiveMatch(null);
-            DebugService.info('HomeScreen', 'Match cleared (not both notified)');
           }
         }
       )
@@ -82,11 +85,36 @@ export default function HomeScreen() {
     }, 15000); // Periodic fallback sync
 
     return () => {
-      supabase.removeChannel(channel);
+      channel.unsubscribe();
       clearInterval(interval);
       DebugService.info('HomeScreen', 'Cleanup: Realtime subscription removed');
     };
   }, [user?.id]);
+
+    // Removed local notification triggering as backend now handles push notifications.
+
+  const markMatchAsNotified = async (matchRecord) => {
+    try {
+      const isUser1 = matchRecord.user1_id === user.id;
+      const updateField = isUser1 ? 'user1_notified' : 'user2_notified';
+      const updateSentField = isUser1 ? 'user1_notification_sent_at' : 'user2_notification_sent_at';
+
+      // Check if already notified to avoid redundant DB call
+      if (matchRecord[updateField]) return;
+
+      await supabase
+        .from('wave_notification_logs')
+        .update({
+          [updateField]: true,
+          [updateSentField]: new Date().toISOString()
+        })
+        .eq('id', matchRecord.id);
+
+      console.log(`[Home] ✅ DB synced: ${updateField}=true for ${matchRecord.id}`);
+    } catch (err) {
+      console.warn('[Home] Failed to sync notification status', err);
+    }
+  };
 
   const fetchActiveMatch = async () => {
     try {
@@ -95,27 +123,35 @@ export default function HomeScreen() {
         .from('wave_notification_logs')
         .select('*')
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-        .eq('both_notified', true)
+        // ✅ FETCH IF: Reveal exists OR any match involving this user
+        .or('revealed_at.not.is.null,matched_at.not.is.null')
         .order('matched_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle(); // ✅ FIXED: Use maybeSingle() to avoid "Cannot coerce" error when no match exists
 
       if (error) {
-        DebugService.warn('HomeScreen', 'No active match found', { error: error.message });
+        DebugService.warn('HomeScreen', 'Error fetching match', { error: error.message });
       }
 
       if (data) {
         const matchTime = new Date(data.matched_at).getTime();
         const age = Date.now() - matchTime;
-        if (age < 60 * 60 * 1000) {
+        if (age < 30 * 60 * 1000) {
           setActiveMatch(data);
           DebugService.success('HomeScreen', 'Active match found', {
             matchId: data.id,
             ageMinutes: Math.round(age / 60000)
           });
+
+          // ✅ TRIGGER NOTIFICATION: On first load if it's a fresh match
+          const isRevealed = data.revealed_at !== null;
+          const dedupeKey = `${data.id}_${isRevealed ? 'REVEAL' : 'HINT'}`;
+          if (!notifiedMatchIds.current.has(dedupeKey)) {
+            // 🚀 Sync with DB to stop server push immediately
+            await markMatchAsNotified(data);
+            notifiedMatchIds.current.add(dedupeKey);
+          }
           return;
-        } else {
-          DebugService.warn('HomeScreen', 'Match expired', { ageMinutes: Math.round(age / 60000) });
         }
       }
       setActiveMatch(null);
@@ -205,11 +241,11 @@ export default function HomeScreen() {
       id: 'geofence',
       icon: isGeofencingActive ? 'location' : 'location-outline',
       label: 'Geofencing',
-      color: isGeofencingActive ? '#10B981' : '#6366F1',
-      bgColor: isGeofencingActive ? '#D1FAE5' : '#EEF2FF',
+      color: '#6366F1',
+      bgColor: '#EEF2FF',
       route: '/home/GeofenceTestScreen',
       badge: geofenceBadge,
-      badgeColor: isGeofencingActive ? '#10B981' : '#6366F1',
+      badgeColor: '#6366F1',
     },
     {
       id: 'search',
@@ -297,14 +333,14 @@ export default function HomeScreen() {
           style={[
             styles.activeMatchContent,
             isRevealed && styles.activeMatchContentRevealed,
-            !isRevealed && { backgroundColor: '#4F46E5' } // Explicit fallback for unrevealed
+            !isRevealed && { backgroundColor: '#6366F1' } // BLUE for hints
           ]}
         >
-          <View style={[styles.matchIconContainer, isRevealed && { backgroundColor: '#C7D2FE' }]}>
+          <View style={[styles.matchIconContainer, isRevealed && { backgroundColor: '#E0E7FF' }]}>
             <Ionicons
               name={isRevealed ? "heart" : "search"}
               size={24}
-              color={isRevealed ? "#4F46E5" : "#FFFFFF"}
+              color={isRevealed ? "#6366F1" : "#FFFFFF"}
             />
           </View>
           <View style={styles.matchTextContainer}>
@@ -315,7 +351,7 @@ export default function HomeScreen() {
               {isRevealed ? "Tap to see who you matched with!" : "Tap to check anonymous hints..."}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={isRevealed ? "#9CA3AF" : "#A5B4FC"} />
+          <Ionicons name="chevron-forward" size={20} color={isRevealed ? "#6366F1" : "#A5B4FC"} />
         </View>
       </TouchableOpacity>
     );
@@ -335,7 +371,7 @@ export default function HomeScreen() {
             <Image
               source={require('../../assets/images/icon.png')}
               style={styles.logo}
-              resizeMode="cover"
+              resizeMode="contain"
             />
           </View>
           <View>
@@ -436,6 +472,8 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 40,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
     shadowColor: '#6366F1',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,

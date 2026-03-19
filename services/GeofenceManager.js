@@ -17,7 +17,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export const GEOFENCE_TASK_NAME = 'CONNECTI_GEOFENCE_TASK';
+export const GEOFENCE_TASK_NAME = 'CONNECTI_GEOFENCE_TASK_V2';
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const FCM_DEVICE_TOKEN_KEY = 'fcm_device_token';
 const CURRENT_ZONE_KEY = 'current_zone';
@@ -26,6 +26,8 @@ const SESSION_LAST_ACTIVE_KEY = 'session_last_active';
 const APP_RUNTIME_STATE_KEY = 'app_runtime_state';
 const APP_RUNTIME_STATE_UPDATED_AT_KEY = 'app_runtime_state_updated_at';
 const KILLED_STATE_STALE_MS = 5 * 60 * 1000;
+export const LOCATION_REFRESH_TASK_NAME = 'CONNECTI_LOCATION_REFRESH_TASK_V2';
+const LAST_REFRESH_LOCATION_KEY = 'last_refresh_location';
 
 function normalizeExecutionState(appState) {
   if (appState === 'active' || appState === 'foreground') {
@@ -126,8 +128,8 @@ async function sendSingleNotification(zoneName, distance, timestamp, executionSt
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `📍 Entered ${zoneName} [${stateLabel}]`,
-        body: `[${stateLabel}] Tap 'Wave' to check in! 👋`,
+        title: `[${stateLabel}] Entered ${zoneName}! 👋`,
+        body: `Wave to let others know you're here!`,
         data: {
           url: '/home/HomeScreen',
           zoneName,
@@ -150,6 +152,85 @@ async function sendSingleNotification(zoneName, distance, timestamp, executionSt
     return true;
   } catch (error) {
     console.error('❌ Notification failed:', error.message);
+    return false;
+  }
+}
+
+// ✅ NEW: Helper for distance calculation (Haversine)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
+// ✅ NEW: Core logic to refresh geofences at a specific location
+export async function refreshGeofencesAtLocation(location, executionState = 'background') {
+  try {
+    const lat = location.latitude;
+    const lng = location.longitude;
+    const stateLabel = executionState.toUpperCase();
+
+    console.log(`[REFRESH:${stateLabel}] 🔄 Refreshing geofences at ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+
+    // 1. Fetch nearby zones from Supabase
+    const { data: zones, error } = await supabase.rpc('get_nearby_zones', {
+      user_lat: lat,
+      user_lng: lng,
+      search_radius_meters: 10000, // 10km
+      max_results: 25,
+    });
+
+    if (error) throw error;
+    if (!zones || zones.length === 0) {
+      console.log(`[REFRESH:${stateLabel}] ℹ️ No zones found nearby`);
+      return false;
+    }
+
+    // 2. Format geofences
+    const geofences = zones.map(zone => ({
+      identifier: zone.name || `zone_${zone.id}`,
+      latitude: zone.latitude,
+      longitude: zone.longitude,
+      radius: Math.min((zone.radius || 500) + 200, 1500),
+      notifyOnEnter: true,
+      notifyOnExit: false,
+    }));
+
+    // 3. Register with OS (Native preferred)
+    const nativeModule = require('./NativeGeofenceService').default;
+    const nativeAvailable = await nativeModule.isAvailable();
+
+    if (nativeAvailable && Platform.OS === 'android') {
+      await nativeModule.registerGeofences(geofences);
+      console.log(`[REFRESH:${stateLabel}] ✅ Updated ${geofences.length} native geofences`);
+    } else {
+      await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, geofences);
+      console.log(`[REFRESH:${stateLabel}] ✅ Updated ${geofences.length} Expo geofences`);
+    }
+
+    // 4. Save state
+    await AsyncStorage.setItem('active_geofences', JSON.stringify(geofences));
+    await AsyncStorage.setItem(LAST_REFRESH_LOCATION_KEY, JSON.stringify({
+      latitude: lat,
+      longitude: lng,
+      timestamp: Date.now()
+    }));
+
+    // Refresh is silent — no notification to the user
+    console.log(`[REFRESH:${stateLabel}] ✅ Silently refreshed ${geofences.length} zones`);
+
+    return true;
+  } catch (err) {
+    console.error(`[REFRESH] ❌ Failed to refresh:`, err.message);
     return false;
   }
 }
@@ -203,6 +284,16 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
     // ... logic to store event and send notification ...
 
     try {
+      // ✅ DEDUP: Check if foreground JS already sent a notification for this zone recently
+      const fgCooldownKey = `last_notification_${zoneName}`;
+      const fgLastSent = await AsyncStorage.getItem(fgCooldownKey);
+      const nowMs = Date.now();
+      if (fgLastSent && (nowMs - parseInt(fgLastSent, 10) < 10000)) {
+        // Foreground JS sent within last 10 seconds — skip to avoid duplicate
+        console.log(`[GEOFENCE:${executionState.toUpperCase()}] ⏭️ Foreground JS already notified for ${zoneName}, skipping BG notification`);
+        return;
+      }
+
       await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
 
       // 🧹 SESSION CLEANUP: Wipe notified zones if stale
@@ -216,7 +307,21 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
       }
       await AsyncStorage.setItem(SESSION_LAST_ACTIVE_KEY, currentTime.toString());
 
-      // ✅ Sync with Supabase via WaveService
+      // ✅ 1. Check LOCAL wave status first (fastest, works offline/killed)
+      if (await WaveService.isWavedLocal()) {
+        console.log(`[BG] 🌊 User already Waved (local), skipping alert for ${zoneName}`);
+        // Still try to sync the new zone silently to DB
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) await WaveService.syncUserZone(user.id, zoneName, {
+            latitude: region.latitude,
+            longitude: region.longitude
+          });
+        } catch (_e) { }
+        return;
+      }
+
+      // ✅ 2. Sync with Supabase via WaveService
       let alreadyOpen = false;
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -224,7 +329,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
           const syncResult = await WaveService.syncUserZone(user.id, zoneName, {
             latitude: region.latitude,
             longitude: region.longitude
-          });
+          }, undefined, executionState);
           alreadyOpen = syncResult?.openToWave || false;
         }
       } catch (dbError) {
@@ -265,17 +370,19 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
 
       await storeGeofenceEvent(eventData);
 
-      // ✅ COOLDOWN CHECK
+      // ✅ 30-MIN COOLDOWN: Only applies to the SAME zone
+      const lastNotifiedZone = await AsyncStorage.getItem('last_notified_zone');
       const outputKey = `last_notification_${zoneName}`;
       const lastSentTime = await AsyncStorage.getItem(outputKey);
-      const now = new Date().getTime();
+      const now = Date.now();
+      const cooldownMs = 30 * 60 * 1000; // 30 minutes
 
-      // TESTING MODE: 10s cooldown. Change to 60 * 1000 for production.
-      const cooldownMs = 10 * 1000;
-      if (lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
-        // Silent cooldown return
+      if (zoneName === lastNotifiedZone && lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
+        console.log(`[BG] ⏳ Cooldown for SAME zone "${zoneName}" active. Skipping notification.`);
         return;
       }
+
+      await AsyncStorage.setItem('last_notified_zone', zoneName);
 
       // ✅ CHECK LATER SUPPRESSION
       const isLater = await WaveService.isLaterSuppressed(zoneName);
@@ -287,8 +394,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
       await AsyncStorage.setItem(outputKey, now.toString());
 
       // ✅ SEND SINGLE INTERACTIVE NOTIFICATION
-      // Calculate rough distance just for log/record, or pass 0 if not needed for payload
-      const distance = 0; // Payload doesn't strictly need precise distance for the "Wave" message
+      const distance = 0;
       const notificationSent = await sendSingleNotification(
         zoneName,
         distance,
@@ -316,6 +422,43 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
     } catch (taskError) {
       // Silent task error
     }
+  }
+});
+
+// ✅ NEW: Background Location Task for distance-based refresh
+TaskManager.defineTask(LOCATION_REFRESH_TASK_NAME, async ({ data, error, executionInfo }) => {
+  if (error || !data) return;
+
+  const { locations } = data;
+  if (!locations || locations.length === 0) return;
+
+  const currentLocation = locations[0].coords;
+  const executionState = await inferExecutionState(executionInfo);
+
+  try {
+    const lastRefreshStr = await AsyncStorage.getItem(LAST_REFRESH_LOCATION_KEY);
+    const lastRefresh = lastRefreshStr ? JSON.parse(lastRefreshStr) : null;
+
+    if (lastRefresh) {
+      const distance = calculateDistance(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        lastRefresh.latitude,
+        lastRefresh.longitude
+      );
+
+      console.log(`[LOC_TASK:${executionState.toUpperCase()}] 📍 Distance since last refresh: ${Math.round(distance)}m`);
+
+      // ✅ REFRESH THRESHOLD: 500m
+      if (distance >= 500) {
+        await refreshGeofencesAtLocation(currentLocation, executionState);
+      }
+    } else {
+      // First time, refresh immediately
+      await refreshGeofencesAtLocation(currentLocation, executionState);
+    }
+  } catch (err) {
+    console.error('[LOC_TASK] ❌ Error in background location task:', err.message);
   }
 });
 

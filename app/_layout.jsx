@@ -10,6 +10,9 @@ import { AuthProvider } from "../context/AuthProvider";
 import { ThemeProvider } from "../context/ThemeContext";
 import NotificationHandler from "../components/NotificationHandler";
 import { WaveService } from '../services/WaveService';
+import { useFonts } from 'expo-font';
+import { Ionicons } from '@expo/vector-icons';
+import * as SplashScreen from 'expo-splash-screen';
 // GeofenceController removed - useGeofenceService handles all geofencing logic
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
@@ -46,8 +49,22 @@ export default function RootLayout() {
     }
   };
 
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
   useEffect(() => {
-    initializeApp();
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    // Start initialization in a non-blocking timeout to avoid blocking the UI thread on startup
+    const timer = setTimeout(() => {
+      initializeApp();
+    }, 0);
+
     persistRuntimeState('active');
 
     const notificationSubscription = Notifications.addNotificationResponseReceivedListener(response => {
@@ -59,6 +76,7 @@ export default function RootLayout() {
     });
 
     return () => {
+      clearTimeout(timer);
       notificationSubscription.remove();
       appStateSubscription.remove();
     };
@@ -74,6 +92,24 @@ export default function RootLayout() {
         console.log('EXPO GEOFENCING TASK REGISTERED:', GEOFENCE_TASK_NAME);
       } else {
         console.log('Geofencing task not registered (controller/hook will handle startup)');
+      }
+
+      // 0. Handle initial notification redirection (Redirection from killed state)
+      try {
+        if (Platform.OS === 'android' && NativeModules?.NativeGeofenceModule?.getInitialNotificationData) {
+          const initialData = await NativeModules.NativeGeofenceModule.getInitialNotificationData();
+          if (initialData) {
+            console.log('📍 Initial notification data found:', initialData);
+            // JS will handle redirection later in a dedicated effect or here if router is ready.
+            // Storing in a global or passing to NotificationHandler is also an option.
+            if (initialData.type === 'GEOFENCE_ENTER' || initialData.type === 'WAVE_HINT') {
+              // Navigation will be handled once user is authenticated
+              await AsyncStorage.setItem('pending_redirection', JSON.stringify(initialData));
+            }
+          }
+        }
+      } catch (redirErr) {
+        console.warn('Failed to get initial notification data:', redirErr);
       }
 
       // Process any waves that occurred while app was killed/backgrounded.
@@ -101,15 +137,19 @@ export default function RootLayout() {
           // 2. Drain pending Wave/Later actions from notification buttons (killed state)
           await drainNativePendingActions();
 
-          // 3. Store Supabase creds so next killed-state Wave can call REST directly
+          // 3. Store Supabase creds and sync suppressions
           try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && nativeMod.storeSupabaseCreds) {
-              await nativeMod.storeSupabaseCreds(SUPABASE_URL, SUPABASE_ANON_KEY, user.id);
-              console.log('✅ Supabase creds stored in native SharedPreferences');
+            if (user) {
+              if (nativeMod.storeSupabaseCreds) {
+                await nativeMod.storeSupabaseCreds(SUPABASE_URL, SUPABASE_ANON_KEY, user.id);
+                console.log('✅ Supabase creds stored in native SharedPreferences');
+              }
+              // Sync suppressions from DB to local/native cache
+              await WaveService.syncSuppressions(user.id);
             }
           } catch (credErr) {
-            console.warn('Could not store Supabase creds in native:', credErr?.message || credErr);
+            console.warn('Could not store Supabase creds or sync suppressions:', credErr?.message || credErr);
           }
 
           // 4. Start zone poll (10s for testing)
@@ -156,7 +196,7 @@ export default function RootLayout() {
             await WaveService.setOpenToWave(user.id, act.zoneId);
           } else if (act.action === 'LATER') {
             console.log(`[drainNative] ⏳ Processing LATER for zone ${act.zoneId}`);
-            await WaveService.setLaterForZone(act.zoneId);
+            await WaveService.setLaterForZone(user.id, act.zoneId, act.zoneId);
           }
         } catch (actErr) {
           console.warn('[drainNative] Failed to process action', act, actErr?.message || actErr);

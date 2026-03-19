@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { Text, View, ActivityIndicator } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from "../context/AuthProvider";
 import { supabase } from "../lib/supabase";
 
@@ -30,7 +31,24 @@ function Index() {
             console.log("Profile check error:", error);
             router.replace("/create-profile");
           } else if (data) {
-            console.log("Profile exists, going to home");
+            console.log("Profile exists, checking for pending redirection...");
+
+            // Notification Redirection Logic
+            const pendingRedirRaw = await AsyncStorage.getItem('pending_redirection');
+            if (pendingRedirRaw) {
+              await AsyncStorage.removeItem('pending_redirection');
+              const pendingRedir = JSON.parse(pendingRedirRaw);
+              console.log('🚀 Executing pending redirection:', pendingRedir);
+
+              if (pendingRedir.matchId) {
+                router.replace({
+                  pathname: "/home/HintScreen",
+                  params: { matchId: pendingRedir.matchId }
+                });
+                return;
+              }
+            }
+
             router.replace("/home/HomeScreen");
           } else {
             console.log("No profile found, going to create profile");

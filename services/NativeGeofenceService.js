@@ -148,6 +148,19 @@ class NativeGeofenceService {
       console.log('⚠️ Failed to sync runtime state to native:', error?.message || error);
     }
   }
+
+  async setIsWaved(isWaved, expiryTimeMs = 0) {
+    if (Platform.OS !== 'android') return;
+
+    const NativeGeofenceModule = getNativeModule();
+    if (!NativeGeofenceModule?.setIsWaved) return;
+
+    try {
+      await NativeGeofenceModule.setIsWaved(Boolean(isWaved), Number(expiryTimeMs));
+    } catch (error) {
+      console.log('⚠️ Failed to sync wave state to native:', error?.message || error);
+    }
+  }
 }
 
 export default new NativeGeofenceService();

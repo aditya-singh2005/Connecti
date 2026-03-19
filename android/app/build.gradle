@@ -3,7 +3,6 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
-def shortCxxBuildDir = new File(System.properties['user.home'], ".cxx/${new File(projectRoot).getName()}")
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -83,16 +82,8 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion "27.1.12297006"
+    ndkVersion rootProject.ext.ndkVersion
 
-    externalNativeBuild {
-        cmake {
-            // Keep generated native objects under a short path to avoid Windows MAX_PATH failures.
-            buildStagingDirectory shortCxxBuildDir
-        }
-    }
-
-    // externalNativeBuild configuration arguments are declared in defaultConfig for compatibility
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
@@ -105,17 +96,6 @@ android {
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
-
-        ndk {
-            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-        }
-
-        externalNativeBuild {
-            cmake {
-                cppFlags "-fexceptions", "-frtti", "-std=c++20", "-Wno-error=format"
-                arguments "-DANDROID_STL=c++_shared"
-            }
-        }
     }
     signingConfigs {
         debug {
@@ -145,12 +125,18 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
-            // Ensure libc++_shared.so is included to satisfy C++ STL symbols
-            pickFirsts += ['**/libc++_shared.so']
         }
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+
+    // ✅ FIX: Shorten CMake intermediate build path to avoid Windows 260-char limit
+    // react-native-keyboard-controller generates extremely long C++ file paths
+    externalNativeBuild {
+        cmake {
+            buildStagingDirectory file("C:/tmp/rnbuild")
+        }
     }
 }
 
@@ -177,7 +163,6 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";

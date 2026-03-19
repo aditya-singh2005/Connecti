@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  Alert, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  TextInput,
+  Alert,
+  StyleSheet,
+  ScrollView,
   TouchableOpacity,
   Modal,
   FlatList,
@@ -53,7 +53,7 @@ export default function Signup() {
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerType, setDatePickerType] = useState(null);
-  
+
   const usernameCheckTimeout = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -77,19 +77,19 @@ export default function Signup() {
     }
 
     if (formData.username.length < 3) {
-      setUsernameStatus({ 
-        checking: false, 
-        available: false, 
-        message: "Username must be at least 3 characters" 
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: "Username must be at least 3 characters"
       });
       return;
     }
 
     if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-      setUsernameStatus({ 
-        checking: false, 
-        available: false, 
-        message: "Only letters, numbers, and underscores allowed" 
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: "Only letters, numbers, and underscores allowed"
       });
       return;
     }
@@ -112,23 +112,23 @@ export default function Signup() {
           .maybeSingle();
 
         if (data) {
-          setUsernameStatus({ 
-            checking: false, 
-            available: false, 
-            message: "Username already taken" 
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: "Username already taken"
           });
         } else {
-          setUsernameStatus({ 
-            checking: false, 
-            available: true, 
-            message: "Username available!" 
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: "Username available!"
           });
         }
       } catch (err) {
-        setUsernameStatus({ 
-          checking: false, 
-          available: true, 
-          message: "Username available!" 
+        setUsernameStatus({
+          checking: false,
+          available: true,
+          message: "Username available!"
         });
       }
     }, 500); // 500ms debounce
@@ -192,7 +192,7 @@ export default function Signup() {
 
     const dateString = `${formData.year}-${String(formData.month).padStart(2, '0')}-${String(formData.day).padStart(2, '0')}`;
     const birthDate = new Date(dateString);
-    
+
     if (isNaN(birthDate.getTime())) {
       Alert.alert("Invalid Date", "Please enter a valid date");
       return false;
@@ -201,7 +201,7 @@ export default function Signup() {
     const today = new Date();
     const age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    
+
     if (age < 13 || (age === 13 && monthDiff < 0) || (age === 13 && monthDiff === 0 && today.getDate() < birthDate.getDate())) {
       Alert.alert("Age Restriction", "You must be at least 13 years old to sign up");
       return false;
@@ -341,7 +341,7 @@ export default function Signup() {
         renderItem={({ item }) => {
           const value = typeof item === 'object' ? item.value : item;
           const label = typeof item === 'object' ? item.label : item;
-          
+
           return (
             <TouchableOpacity
               style={styles.pickerItem}
@@ -372,7 +372,7 @@ export default function Signup() {
               <Text style={styles.stepTitle}>Basic Information</Text>
               <Text style={styles.stepDescription}>Let's get to know you</Text>
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Full Name</Text>
               <TextInput
@@ -384,7 +384,7 @@ export default function Signup() {
                 placeholderTextColor="#999"
               />
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email Address</Text>
               <TextInput
@@ -397,7 +397,7 @@ export default function Signup() {
                 placeholderTextColor="#999"
               />
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
               <TextInput
@@ -409,7 +409,7 @@ export default function Signup() {
                 placeholderTextColor="#999"
               />
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Confirm Password</Text>
               <TextInput
@@ -434,11 +434,11 @@ export default function Signup() {
               <Text style={styles.stepTitle}>Contact Information</Text>
               <Text style={styles.stepDescription}>How can we reach you?</Text>
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Phone Number</Text>
               <View style={styles.phoneContainer}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.countryCodeButton}
                   onPress={() => setShowCountryPicker(true)}
                 >
@@ -448,7 +448,7 @@ export default function Signup() {
                   <Text style={styles.countryCode}>{formData.countryCode}</Text>
                   <Text style={styles.dropdownArrow}>▼</Text>
                 </TouchableOpacity>
-                
+
                 <TextInput
                   placeholder="10 digit number"
                   value={formData.contact}
@@ -516,11 +516,11 @@ export default function Signup() {
               <Text style={styles.stepTitle}>Date of Birth</Text>
               <Text style={styles.stepDescription}>When were you born?</Text>
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Select Your Birthday</Text>
               <View style={styles.dateSelectContainer}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.dateSelectButton}
                   onPress={() => openDatePicker('day')}
                 >
@@ -530,7 +530,7 @@ export default function Signup() {
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.dateSelectButton}
                   onPress={() => openDatePicker('month')}
                 >
@@ -540,7 +540,7 @@ export default function Signup() {
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.dateSelectButton, styles.yearButton]}
                   onPress={() => openDatePicker('year')}
                 >
@@ -588,7 +588,7 @@ export default function Signup() {
               <Text style={styles.stepTitle}>Choose Username</Text>
               <Text style={styles.stepDescription}>Pick your unique identifier</Text>
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Username</Text>
               <TextInput
@@ -604,28 +604,28 @@ export default function Signup() {
                 autoCorrect={false}
                 placeholderTextColor="#999"
               />
-              
+
               {usernameStatus.checking && (
                 <View style={styles.statusContainer}>
                   <View style={styles.loadingDot} />
                   <Text style={styles.statusTextChecking}>{usernameStatus.message}</Text>
                 </View>
               )}
-              
+
               {!usernameStatus.checking && usernameStatus.available === false && (
                 <View style={[styles.statusContainer, styles.errorContainer]}>
                   <Text style={styles.statusIcon}>⚠️</Text>
                   <Text style={styles.statusTextError}>{usernameStatus.message}</Text>
                 </View>
               )}
-              
+
               {!usernameStatus.checking && usernameStatus.available === true && (
                 <View style={[styles.statusContainer, styles.successContainer]}>
                   <Text style={styles.statusIcon}>✓</Text>
                   <Text style={styles.statusTextSuccess}>{usernameStatus.message}</Text>
                 </View>
               )}
-              
+
               <Text style={styles.helperText}>
                 Use letters, numbers, and underscores (min. 3 characters)
               </Text>
@@ -637,14 +637,14 @@ export default function Signup() {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
         <View style={styles.header}>
           <Text style={styles.logo}>Connecti</Text>
           <Text style={styles.headerTitle}>Create Your Account</Text>
-          
+
           <View style={styles.progressContainer}>
             <View style={styles.progressTrack}>
               {[1, 2, 3, 4].map((s) => (
@@ -664,27 +664,27 @@ export default function Signup() {
 
         <View style={styles.buttonContainer}>
           {step > 1 && (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={handleBack}
               style={[styles.button, styles.secondaryButton]}
             >
               <Text style={styles.secondaryButtonText}>← Back</Text>
             </TouchableOpacity>
           )}
-          
+
           {step < 4 ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={handleNext}
               style={[styles.button, styles.primaryButton]}
             >
               <Text style={styles.primaryButtonText}>Next →</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={handleFinalSignup}
               disabled={loading || usernameStatus.checking || !usernameStatus.available}
               style={[
-                styles.button, 
+                styles.button,
                 styles.primaryButton,
                 (loading || usernameStatus.checking || !usernameStatus.available) && styles.disabledButton
               ]}
@@ -708,7 +708,7 @@ export default function Signup() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
     backgroundColor: "#ffffff"
   },
@@ -786,10 +786,10 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
-  input: { 
-    borderWidth: 1.5, 
+  input: {
+    borderWidth: 1.5,
     borderColor: "#e0e0e0",
-    padding: 13, 
+    padding: 13,
     borderRadius: 12,
     backgroundColor: "#fafafa",
     fontSize: 16,

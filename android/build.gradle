@@ -1,3 +1,5 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
 buildscript {
   repositories {
     google()
@@ -18,8 +20,6 @@ allprojects {
     maven { url 'https://www.jitpack.io' }
   }
 }
-
-ext.ndkVersion = '27.1.12297006'
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"

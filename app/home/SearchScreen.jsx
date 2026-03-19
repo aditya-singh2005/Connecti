@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -20,7 +20,7 @@ export default function SearchScreen() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
-    
+
     setIsSearching(true);
     setHasSearched(true);
     const results = await searchUsers(searchQuery);
@@ -61,8 +61,8 @@ export default function SearchScreen() {
             </TouchableOpacity>
           )}
         </View>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           onPress={handleSearch}
           style={[
             styles.searchButton,

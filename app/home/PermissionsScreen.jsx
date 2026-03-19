@@ -36,10 +36,10 @@ export default function PermissionsScreen() {
       // Check location permissions
       const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
       const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
-      
+
       // Check notification permission
       const { status: notifStatus } = await Notifications.getPermissionsAsync();
-      
+
       setPermissions({
         location: fgStatus,
         backgroundLocation: bgStatus,
@@ -48,7 +48,7 @@ export default function PermissionsScreen() {
         batteryOptimization: 'unknown', // Can't check programmatically
         autoStart: 'unknown', // Can't check programmatically
       });
-      
+
     } catch (error) {
       console.error('Permission check error:', error);
     }
@@ -57,7 +57,7 @@ export default function PermissionsScreen() {
   async function requestLocationPermission() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (status === 'granted') {
         Alert.alert(
           '✅ Location Permission Granted',
@@ -83,7 +83,7 @@ export default function PermissionsScreen() {
           ]
         );
       }
-      
+
       await checkAllPermissions();
     } catch (error) {
       Alert.alert('Error', error.message);
@@ -93,7 +93,7 @@ export default function PermissionsScreen() {
   async function requestBackgroundPermission() {
     try {
       const { status } = await Location.requestBackgroundPermissionsAsync();
-      
+
       if (status === 'granted') {
         Alert.alert(
           '✅ Background Location Granted!',
@@ -120,7 +120,7 @@ export default function PermissionsScreen() {
           ]
         );
       }
-      
+
       await checkAllPermissions();
     } catch (error) {
       Alert.alert('Error', error.message);
@@ -130,7 +130,7 @@ export default function PermissionsScreen() {
   async function requestNotificationPermission() {
     try {
       const { status } = await Notifications.requestPermissionsAsync();
-      
+
       if (status === 'granted') {
         Alert.alert('✅ Notifications Enabled', 'You will receive geofence alerts!');
       } else {
@@ -146,7 +146,7 @@ export default function PermissionsScreen() {
           ]
         );
       }
-      
+
       await checkAllPermissions();
     } catch (error) {
       Alert.alert('Error', error.message);
@@ -232,7 +232,7 @@ export default function PermissionsScreen() {
     return '#F59E0B';
   }
 
-  const allPermissionsGranted = 
+  const allPermissionsGranted =
     permissions.location === 'granted' &&
     permissions.backgroundLocation === 'granted' &&
     permissions.notifications === 'granted';
@@ -254,17 +254,17 @@ export default function PermissionsScreen() {
         allPermissionsGranted && styles.heroCardSuccess
       ]}>
         <View style={styles.heroIcon}>
-          <Ionicons 
-            name={allPermissionsGranted ? "shield-checkmark" : "shield-outline"} 
-            size={48} 
-            color={allPermissionsGranted ? "#10B981" : "#14B8A6"} 
+          <Ionicons
+            name={allPermissionsGranted ? "shield-checkmark" : "shield-outline"}
+            size={48}
+            color={allPermissionsGranted ? "#10B981" : "#14B8A6"}
           />
         </View>
         <Text style={styles.heroTitle}>
           {allPermissionsGranted ? "✅ All Set!" : "Permissions Required"}
         </Text>
         <Text style={styles.heroSubtitle}>
-          {allPermissionsGranted 
+          {allPermissionsGranted
             ? "All permissions granted. Geofencing will work perfectly!"
             : "Grant these permissions for full geofencing functionality"
           }
@@ -274,17 +274,17 @@ export default function PermissionsScreen() {
       {/* Critical Permissions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Critical Permissions</Text>
-        
+
         {/* Location */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={requestLocationPermission}
         >
           <View style={styles.permissionIcon}>
-            <Ionicons 
-              name={getPermissionIcon(permissions.location)} 
-              size={32} 
-              color={getPermissionColor(permissions.location)} 
+            <Ionicons
+              name={getPermissionIcon(permissions.location)}
+              size={32}
+              color={getPermissionColor(permissions.location)}
             />
           </View>
           <View style={styles.permissionInfo}>
@@ -303,15 +303,15 @@ export default function PermissionsScreen() {
         </TouchableOpacity>
 
         {/* Background Location */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={requestBackgroundPermission}
         >
           <View style={styles.permissionIcon}>
-            <Ionicons 
-              name={getPermissionIcon(permissions.backgroundLocation)} 
-              size={32} 
-              color={getPermissionColor(permissions.backgroundLocation)} 
+            <Ionicons
+              name={getPermissionIcon(permissions.backgroundLocation)}
+              size={32}
+              color={getPermissionColor(permissions.backgroundLocation)}
             />
           </View>
           <View style={styles.permissionInfo}>
@@ -330,15 +330,15 @@ export default function PermissionsScreen() {
         </TouchableOpacity>
 
         {/* Precise Location */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={openPreciseLocationSettings}
         >
           <View style={styles.permissionIcon}>
-            <Ionicons 
-              name="navigate" 
-              size={32} 
-              color="#6366F1" 
+            <Ionicons
+              name="navigate"
+              size={32}
+              color="#6366F1"
             />
           </View>
           <View style={styles.permissionInfo}>
@@ -354,15 +354,15 @@ export default function PermissionsScreen() {
         </TouchableOpacity>
 
         {/* Notifications */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={requestNotificationPermission}
         >
           <View style={styles.permissionIcon}>
-            <Ionicons 
-              name={getPermissionIcon(permissions.notifications)} 
-              size={32} 
-              color={getPermissionColor(permissions.notifications)} 
+            <Ionicons
+              name={getPermissionIcon(permissions.notifications)}
+              size={32}
+              color={getPermissionColor(permissions.notifications)}
             />
           </View>
           <View style={styles.permissionInfo}>
@@ -384,9 +384,9 @@ export default function PermissionsScreen() {
       {/* Device-Specific Settings */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Device-Specific Settings</Text>
-        
+
         {/* Battery Optimization */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={openBatterySettings}
         >
@@ -406,7 +406,7 @@ export default function PermissionsScreen() {
         </TouchableOpacity>
 
         {/* Auto-Start */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.permissionCard}
           onPress={openAutoStartSettings}
         >

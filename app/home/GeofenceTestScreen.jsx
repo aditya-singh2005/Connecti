@@ -1,5 +1,5 @@
-// app/home/GeofenceTestScreen.jsx - FRIENDLY MODERN UI
-import React, { useState, useEffect } from 'react';
+// app/home/GeofenceTestScreen.jsx - FRIENDLY MODERN UI REFACTOR (v2)
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,25 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGeofenceService } from '../../hooks/useGeofenceService';
+import { WaveService } from '../../services/WaveService';
+import { supabase } from '../../lib/supabase';
 import * as TaskManager from 'expo-task-manager';
 import { GEOFENCE_TASK_NAME } from '../../services/GeofenceManager';
-import { DebugLogger } from '../../components/DebugLogger';
 import { DebugService } from '../../services/DebugService';
+import { LinearGradient } from 'expo-linear-gradient';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function GeofenceTestScreen() {
   const router = useRouter();
@@ -40,38 +50,67 @@ export default function GeofenceTestScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [osTaskStatus, setOsTaskStatus] = useState(false);
+  const [isWaved, setIsWaved] = useState(false);
+  const [isSuppressed, setIsSuppressed] = useState(false);
+  const [waveRemaining, setWaveRemaining] = useState(0);
 
   const stats = getGeofenceStats();
   const zonesWithDistances = stats.zonesWithDistances || [];
 
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (currentZone && !isWaved) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [currentZone, isWaved]);
+
+  const checkWaveStatus = useCallback(async () => {
+    const remaining = await WaveService.getRemainingTime();
+    setWaveRemaining(remaining);
+    setIsWaved(remaining > 0);
+
+    if (currentZone) {
+      const suppressed = await WaveService.isLaterSuppressed(currentZone);
+      setIsSuppressed(suppressed);
+    } else {
+      setIsSuppressed(false);
+    }
+  }, [currentZone]);
+
   useEffect(() => {
     DebugService.lifecycle('GeofenceTestScreen', 'Component mounted');
     checkOsTaskStatus();
-    return () => DebugService.lifecycle('GeofenceTestScreen', 'Component unmounted');
-  }, []);
+    checkWaveStatus();
 
-  useEffect(() => {
-    if (isGeofencingActive) {
-      const interval = setInterval(() => {
-        loadRecentEvents();
-        checkOsTaskStatus();
-      }, 5000);
-      return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      checkWaveStatus();
+      checkOsTaskStatus();
+    }, 5000);
+
+    return () => {
+      DebugService.lifecycle('GeofenceTestScreen', 'Component unmounted');
+      clearInterval(interval);
     }
-  }, [isGeofencingActive]);
+  }, [checkWaveStatus]);
 
   async function checkOsTaskStatus() {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
-    setOsTaskStatus(isRegistered);
-    DebugService.geofence('GeofenceTestScreen', 'OS Task status checked', {
-      isRegistered,
-      taskName: GEOFENCE_TASK_NAME
-    });
+    if (osTaskStatus !== isRegistered) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setOsTaskStatus(isRegistered);
+    }
   }
 
   const handleToggleGeofencing = async () => {
     if (isGeofencingActive) {
-      DebugService.geofence('GeofenceTestScreen', 'User requested to stop geofencing');
       Alert.alert(
         'Stop Geofencing?',
         'Stop monitoring zones?',
@@ -81,39 +120,44 @@ export default function GeofenceTestScreen() {
             text: 'Stop',
             style: 'destructive',
             onPress: async () => {
-              DebugService.geofence('GeofenceTestScreen', 'Stopping geofencing...');
               const result = await stopGeofencing();
               if (result.success) {
                 await checkOsTaskStatus();
-                DebugService.success('GeofenceTestScreen', 'Geofencing stopped successfully');
                 Alert.alert('Stopped', 'Geofencing deactivated');
-              } else {
-                DebugService.error('GeofenceTestScreen', 'Failed to stop geofencing', { error: result.error });
               }
             }
           }
         ]
       );
     } else {
-      DebugService.geofence('GeofenceTestScreen', 'User requested to start geofencing');
       const result = await startGeofencing();
       if (result.success) {
         await checkOsTaskStatus();
-        DebugService.success('GeofenceTestScreen', 'Geofencing started successfully', {
-          zonesCount: result.zonesCount,
-          totalZones: result.zones.length
-        });
-        Alert.alert(
-          'Geofencing Active! 🎉',
-          `Monitoring ${result.zonesCount} zones\n` +
-          `Total ${result.zones.length} nearby\n\n` +
-          `Move around or use Fake GPS to test`,
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Geofencing Active! 🎉', `Monitoring ${result.zonesCount} zones.`);
       } else {
-        DebugService.error('GeofenceTestScreen', 'Failed to start geofencing', { error: result.error });
         Alert.alert('Error', result.error || 'Failed to start');
       }
+    }
+  };
+
+  const handleWave = async () => {
+    if (!currentZone) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'User not logged in');
+        return;
+      }
+
+      const success = await WaveService.setOpenToWave(user.id, currentZone);
+      if (success) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+        await checkWaveStatus();
+        Alert.alert('Waved! 👋', `You are now open to waves in ${currentZone} for 30 minutes.`);
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message);
     }
   };
 
@@ -125,414 +169,199 @@ export default function GeofenceTestScreen() {
     }
     await loadRecentEvents();
     await checkOsTaskStatus();
+    await checkWaveStatus();
     setRefreshing(false);
   };
 
-  const handleManualLocationRefresh = async () => {
-    const newLocation = await updateCurrentLocation();
-    if (newLocation) {
+  const handleResetSuppression = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'User not logged in');
+        return;
+      }
+
       Alert.alert(
-        'Location Updated 📍',
-        `${newLocation.latitude.toFixed(6)}, ${newLocation.longitude.toFixed(6)}\n` +
-        `Accuracy: ±${Math.round(newLocation.accuracy)}m`,
-        [{ text: 'OK' }]
+        'Clear Blocks?',
+        'This will reset all blocked zones so you can receive notifications again immediately.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Reset',
+            style: 'destructive',
+            onPress: async () => {
+              const success = await WaveService.resetSuppressions(user.id);
+              if (success) {
+                await checkWaveStatus();
+                Alert.alert('Success', 'All blocks cleared! 🚀');
+              }
+            }
+          }
+        ]
       );
+    } catch (err) {
+      Alert.alert('Error', err.message);
     }
   };
 
-  const handleClearHistory = () => {
-    Alert.alert(
-      'Clear History?',
-      'Remove all events?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            const success = await clearEventHistory();
-            if (success) {
-              Alert.alert('Cleared', 'History cleared');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
-
-  const getEventStateLabel = (state) => {
-    if (state === 'foreground') return 'FOREGROUND';
-    if (state === 'background') return 'BACKGROUND';
-    if (state === 'killed') return 'KILLED';
-    return 'UNKNOWN';
-  };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={[styles.headerContainer, { paddingTop: insets.top + 10 }]}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+      {/* Premium Header */}
+      <LinearGradient
+        colors={['#6366F1', '#4F46E5']}
+        style={[styles.header, { paddingTop: insets.top + 10 }]}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+            <Ionicons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Geofencing</Text>
-          <TouchableOpacity onPress={handleManualLocationRefresh} style={styles.headerBtn}>
-            <Ionicons name="refresh" size={22} color="#FFFFFF" />
+          <Text style={styles.headerTitle}>Connecti Zones</Text>
+          <TouchableOpacity onPress={handleRefresh} style={styles.iconBtn}>
+            <Ionicons name="filter" size={20} color="#FFF" />
           </TouchableOpacity>
         </View>
 
-        {/* Status Hero Card */}
-        <View style={styles.heroCard}>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusIconWrapper, isGeofencingActive && styles.statusIconActive]}>
-              <Ionicons
-                name={isGeofencingActive ? "checkmark-circle" : "radio-button-off-outline"}
-                size={28}
-                color={isGeofencingActive ? "#10B981" : "#A78BFA"}
-              />
+        {/* 1. Geofence Summary Section (User requested this first) */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryVal}>{zonesWithDistances.length}</Text>
+              <Text style={styles.summaryLab}>Monitored</Text>
             </View>
-            <View style={styles.statusInfo}>
-              <Text style={styles.statusTitle}>
-                {isGeofencingActive ? "✨ Active" : "💤 Standby"}
-              </Text>
-              <Text style={styles.statusSubtitle}>
-                {isGeofencingActive
-                  ? `Tracking ${zonesWithDistances.length} zones`
-                  : "Tap start to begin"
-                }
-              </Text>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryVal}>{allNearbyZones.length}</Text>
+              <Text style={styles.summaryLab}>Nearby</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <View style={[styles.osDot, { backgroundColor: osTaskStatus ? '#10B981' : '#EF4444' }]} />
+              <Text style={styles.summaryLab}>Service</Text>
             </View>
           </View>
-
-          {currentZone && (
-            <View style={styles.currentZoneBadge}>
-              <Ionicons name="location" size={14} color="#10B981" />
-              <Text style={styles.currentZoneText}>In {currentZone}</Text>
-            </View>
-          )}
         </View>
-      </View>
+      </LinearGradient>
 
       <ScrollView
-        style={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#8B5CF6']}
-            tintColor="#8B5CF6"
-          />
-        }
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#4F46E5" />}
       >
-        {/* Quick Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <View style={styles.statContent}>
-              <Ionicons name="eye-outline" size={20} color="#8B5CF6" />
-              <Text style={styles.statValue}>{zonesWithDistances.length}</Text>
-              <Text style={styles.statLabel}>Monitored</Text>
-            </View>
-          </View>
+        {/* 2. Circular Wave Button (Below summary) */}
+        <View style={styles.waveSection}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <TouchableOpacity
+              style={[
+                styles.waveCircle,
+                !currentZone && styles.waveCircleInactive,
+                isWaved && styles.waveCircleActive,
+                isSuppressed && !isWaved && styles.waveCircleSuppressed
+              ]}
+              onPress={currentZone ? handleWave : null}
+              disabled={!currentZone}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={
+                  isWaved ? ['#10B981', '#059669'] :
+                    isSuppressed ? ['#F59E0B', '#D97706'] :
+                      currentZone ? ['#6366F1', '#4F46E5'] :
+                        ['#9CA3AF', '#6B7280']
+                }
+                style={styles.waveGradient}
+              >
+                <Ionicons
+                  name={isWaved ? "sparkles" : currentZone ? "hand-right" : "location-outline"}
+                  size={42}
+                  color="#FFF"
+                />
+                <Text style={styles.waveBtnText}>
+                  {isWaved ? 'ACTIVE' : currentZone ? 'WAVE' : 'STANDBY'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
 
-          <View style={styles.statCard}>
-            <View style={styles.statContent}>
-              <Ionicons name="location-outline" size={20} color="#3B82F6" />
-              <Text style={styles.statValue}>{allNearbyZones.length}</Text>
-              <Text style={styles.statLabel}>Nearby</Text>
-            </View>
-          </View>
+          {/* 3. Current Zone Info & Reset Options */}
+          <View style={styles.zoneInfoContainer}>
+            {currentZone ? (
+              <View style={styles.zoneDetectedCard}>
+                <Text style={[styles.zoneLabel, { color: isWaved ? '#10B981' : '#4F46E5' }]}>
+                  📍 DETECTED IN {currentZone.toUpperCase()}
+                </Text>
+                <Text style={styles.zoneActionText}>
+                  {isWaved
+                    ? "You are now visible to others in this zone! ✨"
+                    : "Tap above to wave and connect with people here."}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.noZoneText}>Will let you know once you enter any Connecti zones</Text>
+            )}
 
-          <View style={styles.statCard}>
-            <View style={styles.statContent}>
-              <Ionicons name="notifications-outline" size={20} color="#8B5CF6" />
-              <Text style={styles.statValue}>{recentEvents.length}</Text>
-              <Text style={styles.statLabel}>Events</Text>
-            </View>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={styles.statContent}>
-              <Ionicons
-                name={osTaskStatus ? "checkmark-circle" : "close-circle"}
-                size={20}
-                color={osTaskStatus ? '#10B981' : '#EF4444'}
-              />
-              <Text style={[styles.statValue, { color: osTaskStatus ? '#10B981' : '#EF4444' }]}>
-                {osTaskStatus ? '✓' : '✗'}
-              </Text>
-              <Text style={styles.statLabel}>OS Task</Text>
-            </View>
+            <TouchableOpacity style={styles.resetSuppressionBtn} onPress={handleResetSuppression}>
+              <Ionicons name="refresh-circle-outline" size={16} color="#4F46E5" />
+              <Text style={styles.resetSuppressionText}>Reset blocked notifications</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Current Location */}
+        {/* 4. Events Section (Below Wave) */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="navigate-circle-outline" size={18} color="#8B5CF6" />
-            <Text style={styles.sectionTitle}>Current Location</Text>
+            <Text style={styles.sectionHeading}>RECENT ACTIVITY</Text>
+            {recentEvents.length > 0 && <TouchableOpacity onPress={clearEventHistory}><Text style={styles.actionText}>Clear</Text></TouchableOpacity>}
           </View>
 
-          {currentLocation ? (
-            <View style={styles.locationCard}>
-              <View style={styles.locationGrid}>
-                <View style={styles.locationItem}>
-                  <View style={styles.locationIconWrapper}>
-                    <Ionicons name="compass-outline" size={14} color="#8B5CF6" />
-                  </View>
-                  <Text style={styles.locationLabel}>Latitude</Text>
-                  <Text style={styles.locationValue}>
-                    {currentLocation.latitude.toFixed(6)}
-                  </Text>
+          {recentEvents.length > 0 ? (
+            recentEvents.slice(0, 5).map((event, idx) => (
+              <View key={idx} style={styles.eventCard}>
+                <View style={[styles.eventIcon, { backgroundColor: event.appState === 'killed' ? '#FEE2E2' : '#E0E7FF' }]}>
+                  <Ionicons name={event.appState === 'killed' ? 'skull' : 'flash'} size={14} color={event.appState === 'killed' ? '#EF4444' : '#4F46E5'} />
                 </View>
-                <View style={styles.locationItem}>
-                  <View style={styles.locationIconWrapper}>
-                    <Ionicons name="compass-outline" size={14} color="#3B82F6" />
-                  </View>
-                  <Text style={styles.locationLabel}>Longitude</Text>
-                  <Text style={styles.locationValue}>
-                    {currentLocation.longitude.toFixed(6)}
-                  </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.eventZoneName}>{event.zone}</Text>
+                  <Text style={styles.eventSub}>{new Date(event.timestamp).toLocaleTimeString()} • {event.appState.toUpperCase()}</Text>
                 </View>
+                {event.notificationSent && <Ionicons name="notifications" size={16} color="#10B981" />}
               </View>
-              <View style={styles.locationGrid}>
-                <View style={styles.locationItem}>
-                  <View style={styles.locationIconWrapper}>
-                    <Ionicons name="radio-outline" size={14} color="#8B5CF6" />
-                  </View>
-                  <Text style={styles.locationLabel}>Accuracy</Text>
-                  <Text style={styles.locationValue}>
-                    ±{Math.round(currentLocation.accuracy)}m
-                  </Text>
-                </View>
-                <View style={styles.locationItem}>
-                  <View style={styles.locationIconWrapper}>
-                    <Ionicons name="time-outline" size={14} color="#3B82F6" />
-                  </View>
-                  <Text style={styles.locationLabel}>Updated</Text>
-                  <Text style={styles.locationValue}>
-                    {formatTime(currentLocation.timestamp)}
-                  </Text>
-                </View>
-              </View>
-            </View>
+            ))
           ) : (
-            <View style={styles.emptyCard}>
-              <Ionicons name="location-outline" size={40} color="#C4B5FD" />
-              <Text style={styles.emptyText}>No location data</Text>
-              <TouchableOpacity
-                style={styles.smallBtn}
-                onPress={handleManualLocationRefresh}
-              >
-                <Text style={styles.smallBtnText}>Get Location</Text>
-              </TouchableOpacity>
-            </View>
+            <View style={styles.emptyCard}><Text style={styles.emptyText}>No recent activity detected.</Text></View>
           )}
         </View>
 
-        {/* Recent Events (MOVED UP) */}
-        {recentEvents.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="time-outline" size={18} color="#8B5CF6" />
-              <Text style={styles.sectionTitle}>Recent Activity</Text>
-              <TouchableOpacity onPress={handleClearHistory} style={styles.clearBtn}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.eventsList}>
-              {recentEvents.slice(0, 5).map((event, index) => (
-                <View key={index} style={styles.eventRow}>
-                  <View style={[
-                    styles.eventIcon,
-                    {
-                      backgroundColor: event.appState === 'killed'
-                        ? '#FEE2E2'
-                        : event.appState === 'background'
-                          ? '#FEF3C7'
-                          : '#E0E7FF'
-                    }
-                  ]}>
-                    <Ionicons
-                      name={event.appState === 'killed' ? 'flash-off-outline' : 'flash-outline'}
-                      size={16}
-                      color={
-                        event.appState === 'killed'
-                          ? '#EF4444'
-                          : event.appState === 'background'
-                            ? '#F59E0B'
-                            : '#6366F1'
-                      }
-                    />
-                  </View>
-                  <View style={styles.eventInfo}>
-                    <Text style={styles.eventZone} numberOfLines={1}>
-                      {event.zone}
-                    </Text>
-                    <Text style={styles.eventMeta}>
-                      {formatTime(event.timestamp)} • {getEventStateLabel(event.appState)}
-                    </Text>
-                  </View>
-                  <View style={[
-                    styles.eventBadge,
-                    event.notificationSent && styles.eventBadgeActive
-                  ]}>
-                    <Ionicons
-                      name={event.notificationSent ? "checkmark" : "remove"}
-                      size={11}
-                      color={event.notificationSent ? '#10B981' : '#94A3B8'}
-                    />
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Database Presence Info (NEW) */}
+        {/* 5. Monitored Zones Section (At the bottom) */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="sync-outline" size={18} color="#10B981" />
-            <Text style={styles.sectionTitle}>Real-time Presence</Text>
-          </View>
-          <View style={styles.guideCard}>
-            <View style={styles.statusRow}>
-              <Ionicons
-                name={currentZone ? "globe-outline" : "cloud-offline-outline"}
-                size={20}
-                color={currentZone ? "#10B981" : "#94A3B8"}
-              />
-              <Text style={styles.guideText}>
-                {currentZone
-                  ? `Synced: Active in ${currentZone}`
-                  : "Standby: No active zone presence"}
-              </Text>
+          <Text style={styles.sectionHeading}>MONITORED ZONES ({zonesWithDistances.length})</Text>
+          {zonesWithDistances.map((z, idx) => (
+            <View key={idx} style={[styles.zoneCard, z.identifier === currentZone && styles.zoneCardActive]}>
+              <View style={styles.zoneCardCircle}>
+                <Ionicons name="map" size={16} color={z.identifier === currentZone ? '#10B981' : '#6366F1'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.zoneCardName}>{z.identifier}</Text>
+                <Text style={styles.zoneCardDist}>{Math.round(z.distance)}m away • {z.radius}m radius</Text>
+              </View>
+              {z.distance <= z.radius && (
+                <View style={styles.insightBadge}><Text style={styles.insightText}>INSIDE</Text></View>
+              )}
             </View>
-          </View>
+          ))}
         </View>
 
-        {/* Monitored Zones (MOVED DOWN) */}
-        {zonesWithDistances.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="map-outline" size={18} color="#8B5CF6" />
-              <Text style={styles.sectionTitle}>
-                Monitored Zones ({zonesWithDistances.length})
-              </Text>
-            </View>
-            <Text style={styles.sectionSubtitle}>
-              Sorted by distance • Max 20 zones
-            </Text>
-
-            <View style={styles.zonesList}>
-              {zonesWithDistances.map((zone, index) => {
-                const isInside = zone.distance <= zone.radius;
-                return (
-                  <View key={index} style={[styles.zoneRow, isInside && styles.zoneRowActive]}>
-                    <View style={[
-                      styles.zoneIcon,
-                      { backgroundColor: isInside ? '#D1FAE5' : '#EDE9FE' }
-                    ]}>
-                      <Ionicons
-                        name={isInside ? "location" : "location-outline"}
-                        size={18}
-                        color={isInside ? "#10B981" : "#8B5CF6"}
-                      />
-                    </View>
-                    <View style={styles.zoneInfo}>
-                      <Text style={[styles.zoneName, isInside && styles.zoneNameActive]} numberOfLines={1}>
-                        {zone.identifier}
-                      </Text>
-                      <View style={styles.zoneMetas}>
-                        <View style={styles.zoneMetaItem}>
-                          <Ionicons name="navigate" size={10} color="#94A3B8" />
-                          <Text style={styles.zoneMeta}>{Math.round(zone.distance)}m</Text>
-                        </View>
-                        <View style={styles.zoneMetaItem}>
-                          <Ionicons name="radio-button-on-outline" size={10} color="#94A3B8" />
-                          <Text style={styles.zoneMeta}>{zone.radius}m</Text>
-                        </View>
-                      </View>
-                    </View>
-                    {isInside && (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>INSIDE</Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Testing Guide */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="bulb-outline" size={18} color="#8B5CF6" />
-            <Text style={styles.sectionTitle}>Testing Guide</Text>
-          </View>
-
-          <View style={styles.guideCard}>
-            <View style={styles.guideStep}>
-              <View style={styles.guideStepNumber}>
-                <Text style={styles.guideStepNumberText}>1</Text>
-              </View>
-              <Text style={styles.guideText}>Start geofencing (check OS Task ✓)</Text>
-            </View>
-            <View style={styles.guideStep}>
-              <View style={styles.guideStepNumber}>
-                <Text style={styles.guideStepNumberText}>2</Text>
-              </View>
-              <Text style={styles.guideText}>Install "Fake GPS" from Play Store</Text>
-            </View>
-            <View style={styles.guideStep}>
-              <View style={styles.guideStepNumber}>
-                <Text style={styles.guideStepNumberText}>3</Text>
-              </View>
-              <Text style={styles.guideText}>Enable in Developer Options</Text>
-            </View>
-            <View style={styles.guideStep}>
-              <View style={styles.guideStepNumber}>
-                <Text style={styles.guideStepNumberText}>4</Text>
-              </View>
-              <Text style={styles.guideText}>Set zone coordinates & test! 🎉</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={{ height: 100 + insets.bottom }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Floating Control Button */}
-      <View style={[styles.floatingButtonContainer, { bottom: insets.bottom + 16 }]}>
+      {/* Persistent Control Toggle */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <TouchableOpacity
-          style={[
-            styles.controlBtn,
-            loading && styles.controlBtnLoading,
-            isGeofencingActive && styles.controlBtnActive
-          ]}
+          style={[styles.toggleBtn, isGeofencingActive && styles.toggleBtnActive]}
           onPress={handleToggleGeofencing}
-          disabled={loading}
-          activeOpacity={0.8}
+          activeOpacity={0.9}
         >
-          <Ionicons
-            name={loading ? 'hourglass-outline' : isGeofencingActive ? 'stop-circle' : 'play-circle'}
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={styles.controlBtnText}>
-            {loading ? 'Setting up...' : isGeofencingActive ? 'Stop' : 'Start Geofencing'}
-          </Text>
+          <Ionicons name={isGeofencingActive ? "stop" : "play"} size={18} color="#FFF" />
+          <Text style={styles.toggleBtnText}>{isGeofencingActive ? "STOP SERVICE" : "START SERVICE"}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -542,256 +371,204 @@ export default function GeofenceTestScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F9FAFB',
   },
-  headerContainer: {
-    paddingBottom: 20,
-    backgroundColor: '#8B5CF6',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 4,
+  header: {
+    paddingHorizontal: 24,
+    paddingBottom: 30,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
   },
-  headerContent: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
+  iconBtn: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerBtn: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
-  heroCard: {
-    marginHorizontal: 18,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+  summaryCard: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  statusRow: {
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-around',
   },
-  statusIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F5F3FF',
+  summaryItem: {
+    alignItems: 'center',
+  },
+  summaryVal: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  summaryLab: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  osDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginBottom: 4,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  scrollContent: {
+    padding: 24,
+  },
+  waveSection: {
+    alignItems: 'center',
+    marginBottom: 35,
+  },
+  waveCircle: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: '#FFF',
+    elevation: 20,
+    padding: 10,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+  },
+  waveGradient: {
+    flex: 1,
+    borderRadius: 80,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statusIconActive: {
-    backgroundColor: '#D1FAE5',
+  waveCircleInactive: {
+    shadowColor: '#9CA3AF',
   },
-  statusInfo: {
-    flex: 1,
+  waveCircleActive: {
+    shadowColor: '#10B981',
   },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 3,
+  waveCircleSuppressed: {
+    shadowColor: '#F59E0B',
   },
-  statusSubtitle: {
+  waveBtnText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 6,
+    letterSpacing: 1,
+  },
+  timerBadge: {
+    position: 'absolute',
+    bottom: -10,
+    backgroundColor: '#064E3B',
+    paddingHorizontal: 15,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  timerText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  zoneInfoContainer: {
+    marginTop: 25,
+    alignItems: 'center',
+  },
+  zoneDetectedCard: {
+    backgroundColor: '#FFF',
+    padding: 18,
+    borderRadius: 20,
+    alignItems: 'center',
+    elevation: 2,
+    width: '100%',
+  },
+  zoneLabel: {
     fontSize: 13,
-    color: '#64748B',
+    fontWeight: '900',
+    marginBottom: 8,
   },
-  currentZoneBadge: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+  zoneActionText: {
+    fontSize: 14,
+    color: '#4B5563',
+    textAlign: 'center',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  noZoneText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  resetSuppressionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 15,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
     gap: 6,
   },
-  currentZoneText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  scrollContent: {
-    flex: 1,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  statContent: {
-    padding: 12,
-    alignItems: 'center',
-    gap: 3,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1E293B',
-    marginTop: 2,
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    textTransform: 'uppercase',
+  resetSuppressionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   section: {
-    marginHorizontal: 18,
-    marginTop: 20,
+    marginBottom: 35,
   },
   sectionHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 7,
-    marginBottom: 3,
+    marginBottom: 15,
   },
-  sectionTitle: {
-    fontSize: 15,
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#9CA3AF',
+    letterSpacing: 2,
+  },
+  actionText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
+    color: '#EF4444',
   },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 10,
-    marginLeft: 25,
-  },
-  clearBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 7,
-    backgroundColor: '#FEE2E2',
-  },
-  clearText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-  locationCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+  eventCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
     padding: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
-    gap: 10,
-  },
-  locationGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  locationItem: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    alignItems: 'center',
-  },
-  locationIconWrapper: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  locationLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 3,
-  },
-  locationValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
-    fontFamily: 'monospace',
-  },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 28,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 10,
-    marginBottom: 14,
-  },
-  smallBtn: {
-    backgroundColor: '#8B5CF6',
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  smallBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  eventsList: {
-    gap: 7,
-  },
-  eventRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
+    borderRadius: 20,
+    marginBottom: 10,
+    gap: 12,
     elevation: 1,
   },
   eventIcon: {
@@ -801,165 +578,100 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eventInfo: {
-    flex: 1,
+  eventZoneName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
   },
-  eventZone: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 3,
+  eventSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '500',
   },
-  eventMeta: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  eventBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+  emptyCard: {
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 20,
   },
-  eventBadgeActive: {
-    backgroundColor: '#D1FAE5',
+  emptyText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
   },
-  zonesList: {
-    gap: 7,
-  },
-  zoneRow: {
+  zoneCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-    borderWidth: 1.5,
+    backgroundColor: '#FFF',
+    padding: 14,
+    borderRadius: 20,
+    marginBottom: 10,
+    gap: 12,
+    borderWidth: 2,
     borderColor: 'transparent',
+    elevation: 1,
   },
-  zoneRowActive: {
+  zoneCardActive: {
     borderColor: '#10B981',
     backgroundColor: '#F0FDF4',
   },
-  zoneIcon: {
+  zoneCardCircle: {
     width: 38,
     height: 38,
     borderRadius: 19,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  zoneInfo: {
-    flex: 1,
+  zoneCardName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
   },
-  zoneName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 5,
+  zoneCardDist: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
-  zoneNameActive: {
-    color: '#059669',
-  },
-  zoneMetas: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  zoneMetaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  zoneMeta: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  activeBadge: {
+  insightBadge: {
     backgroundColor: '#10B981',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
   },
-  activeBadgeText: {
-    color: '#FFFFFF',
+  insightText: {
+    color: '#FFF',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  guideCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
-    gap: 10,
-  },
-  guideStep: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  guideStepNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#8B5CF6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  guideStepNumberText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  guideText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#334155',
-    lineHeight: 18,
-    paddingTop: 3,
-  },
-  floatingButtonContainer: {
+  footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 24,
   },
-  controlBtn: {
+  toggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 15,
-    borderRadius: 14,
-    backgroundColor: '#8B5CF6',
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 4 },
+    backgroundColor: '#4F46E5',
+    paddingVertical: 18,
+    borderRadius: 24,
+    elevation: 12,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 10,
+    gap: 10,
   },
-  controlBtnActive: {
+  toggleBtnActive: {
     backgroundColor: '#EF4444',
     shadowColor: '#EF4444',
   },
-  controlBtnLoading: {
-    backgroundColor: '#94A3B8',
-    shadowColor: '#94A3B8',
-  },
-  controlBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  toggleBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });

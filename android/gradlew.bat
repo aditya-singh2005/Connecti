@@ -35,16 +35,6 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
-@rem On Windows, native builds can exceed MAX_PATH from long project directories.
-@rem Prefer a short junction path (C:\capp\android) when available.
-for %%i in ("%APP_HOME%\..") do set PROJECT_HOME=%%~fi
-if /I not "%PROJECT_HOME%"=="C:\capp" (
-  if not exist "C:\capp\android\gradle\wrapper\gradle-wrapper.jar" (
-    if not exist "C:\capp" cmd /c mklink /J C:\capp "%PROJECT_HOME%" >NUL 2>&1
-  )
-)
-if exist "C:\capp\android\gradle\wrapper\gradle-wrapper.jar" set APP_HOME=C:\capp\android
-
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
@@ -81,8 +71,6 @@ goto fail
 @rem Setup the command line
 
 set CLASSPATH=
-
-cd /d "%APP_HOME%"
 
 
 @rem Execute Gradle

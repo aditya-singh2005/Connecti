@@ -16,7 +16,7 @@ export default function Login() {
     }
 
     setLoading(true);
-    
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -34,7 +34,7 @@ export default function Login() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Log In</Text>
-      
+
       <TextInput
         placeholder="Email"
         value={email}
@@ -43,7 +43,7 @@ export default function Login() {
         autoCapitalize="none"
         keyboardType="email-address"
       />
-      
+
       <TextInput
         placeholder="Password"
         secureTextEntry
@@ -51,10 +51,10 @@ export default function Login() {
         onChangeText={setPassword}
         style={styles.input}
       />
-      
-      <Button 
-        title={loading ? "Signing In..." : "Log In"} 
-        onPress={handleLogin} 
+
+      <Button
+        title={loading ? "Signing In..." : "Log In"}
+        onPress={handleLogin}
         disabled={loading}
         color="#1E88E5"
       />
@@ -63,9 +63,9 @@ export default function Login() {
         <Text style={styles.signupText}>
           Don't have an account?
         </Text>
-        <Button 
-          title="Sign Up" 
-          onPress={() => router.push("/signup")} 
+        <Button
+          title="Sign Up"
+          onPress={() => router.push("/signup")}
           color="#666"
         />
       </View>
@@ -74,34 +74,34 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    justifyContent: "center", 
+  container: {
+    flex: 1,
+    justifyContent: "center",
     padding: 20,
     backgroundColor: "#f5f5f5"
   },
-  title: { 
-    fontSize: 28, 
-    fontWeight: "bold", 
-    marginBottom: 30, 
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    marginBottom: 30,
     textAlign: "center",
     color: "#1E88E5"
   },
-  input: { 
-    borderWidth: 1, 
+  input: {
+    borderWidth: 1,
     borderColor: "#ddd",
-    padding: 15, 
-    marginBottom: 15, 
+    padding: 15,
+    marginBottom: 15,
     borderRadius: 8,
     backgroundColor: "white",
     fontSize: 16
   },
-  signupRedirect: { 
-    marginTop: 20, 
-    alignItems: "center" 
+  signupRedirect: {
+    marginTop: 20,
+    alignItems: "center"
   },
-  signupText: { 
-    textAlign: "center", 
+  signupText: {
+    textAlign: "center",
     marginBottom: 10,
     color: "#666"
   }

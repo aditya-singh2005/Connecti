@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
@@ -69,7 +69,7 @@ export default function FriendRequestsScreen() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
-    
+
     setIsSearching(true);
     setHasSearched(true);
     const results = await searchUsers(searchQuery);
@@ -94,8 +94,8 @@ export default function FriendRequestsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          onPress={() => router.push('/home/ProfileScreen')} 
+        <TouchableOpacity
+          onPress={() => router.push('/home/ProfileScreen')}
           style={styles.backButton}
         >
           <Text style={styles.backIcon}>←</Text>
@@ -106,7 +106,7 @@ export default function FriendRequestsScreen() {
 
       {/* Tabs */}
       <View style={styles.tabsContainer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'received' && styles.activeTab]}
           onPress={() => setActiveTab('received')}
         >
@@ -120,7 +120,7 @@ export default function FriendRequestsScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
           onPress={() => setActiveTab('sent')}
         >
@@ -134,7 +134,7 @@ export default function FriendRequestsScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'search' && styles.activeTab]}
           onPress={() => setActiveTab('search')}
         >
@@ -163,8 +163,8 @@ export default function FriendRequestsScreen() {
               </TouchableOpacity>
             )}
           </View>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             onPress={handleSearch}
             style={[
               styles.searchButton,
@@ -201,13 +201,13 @@ export default function FriendRequestsScreen() {
                 </View>
 
                 <View style={styles.requestActions}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => handleAcceptRequest(request.id, request.name)}
                     style={styles.acceptButton}
                   >
                     <Text style={styles.acceptButtonText}>Accept</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => handleRejectRequest(request.id, request.name)}
                     style={styles.rejectButton}
                   >
@@ -243,7 +243,7 @@ export default function FriendRequestsScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => handleCancelRequest(request.id, request.name)}
                   style={styles.cancelButton}
                 >

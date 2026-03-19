@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -21,7 +21,7 @@ export default function FriendsListScreen() {
     removeFriendship
   } = useFriendships();
 
-  const filteredFriends = friends.filter(friend => 
+  const filteredFriends = friends.filter(friend =>
     friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     friend.contact.includes(searchQuery)
   );
@@ -93,7 +93,7 @@ export default function FriendsListScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => handleRemoveFriend(friend.id, friend.name)}
                 style={styles.removeButton}
               >

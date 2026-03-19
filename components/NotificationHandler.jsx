@@ -42,10 +42,10 @@ export default function NotificationHandler() {
         clearTimeout(retryTimeoutRef.current);
       }
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, [user?.id]);
@@ -182,8 +182,11 @@ export default function NotificationHandler() {
         // 2. LATER (From Zone Entry) - suppress this zone for the rest of today
         else if (actionId === 'LATER') {
           console.log('⏳ LATER clicked - suppressing zone for today');
-          const zoneName = data?.zoneName || data?.zoneId || 'Unknown Zone';
-          await WaveService.setLaterForZone(zoneName);
+          const zoneId = data?.zoneId;
+          const zoneName = data?.zoneName || zoneId || 'Unknown Zone';
+          if (user?.id && zoneId) {
+            await WaveService.setLaterForZone(user.id, zoneId, zoneName);
+          }
           await dismissAndCollapse();
         }
 
@@ -235,18 +238,93 @@ export default function NotificationHandler() {
           }, 100);
         }
 
-        // 5. BODY TAP (Default)
-        else if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-          console.log('👆 Body Tapped');
+        // 4.5 START CHAT (From Reveal Match)
+        else if (actionId === 'START_CHAT') {
+          console.log('💬 START CHAT clicked');
+          await dismissAndCollapse();
+          setTimeout(async () => {
+            const matchId = data?.matchId;
+            let partnerId = data?.partnerId;
+
+            try {
+              if (!partnerId && matchId && user?.id) {
+                const { data: matchData } = await supabase.from('wave_notification_logs').select('user1_id, user2_id').eq('id', matchId).single();
+                if (matchData) {
+                  partnerId = matchData.user1_id === user.id ? matchData.user2_id : matchData.user1_id;
+                }
+              }
+            } catch (err) {
+              console.log('Error fetching partnerId:', err);
+            }
+
+            if (partnerId) {
+              router.push({ pathname: '/home/ChatConversationScreen', params: { friendId: partnerId } });
+            } else if (matchId) {
+              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+            } else {
+              router.replace('/home/HomeScreen');
+            }
+          }, 100);
+        }
+
+        // 4.6 MISS MOMENT (From Reveal Match)
+        else if (actionId === 'MISS_MOMENT') {
+          console.log('🚫 MISS MOMENT clicked');
+          const matchId = data?.matchId;
+          if (user?.id && matchId) {
+            try {
+              // Mark as skipped in DB
+              await supabase.from('wave_notification_logs').update({
+                skipped_by: user.id,
+                skipped_at: new Date().toISOString()
+              }).eq('id', matchId);
+
+              // Notify the other person immediately just like HintScreen
+              const { data: matchData } = await supabase.from('wave_notification_logs').select('user1_id, user2_id, user1_expo_push_token, user2_expo_push_token').eq('id', matchId).single();
+              if (matchData) {
+                const amIUser1 = matchData.user1_id === user.id;
+                const partnerToken = amIUser1 ? matchData.user2_expo_push_token : matchData.user1_expo_push_token;
+                
+                if (partnerToken && partnerToken.startsWith('ExponentPushToken')) {
+                  await fetch('https://exp.host/--/api/v2/push/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                      to: partnerToken,
+                      title: '🌫️ Moment Passed',
+                      body: 'The other person skipped this moment.',
+                      data: { type: 'skipped', matchId },
+                      sound: 'default',
+                      channelId: 'geofence-alerts'
+                    })
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Failed to skip from notification:', err);
+            }
+          }
           await dismissAndCollapse();
           setTimeout(() => {
-            // Check if it's a match-related notification
+            if (matchId) {
+              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+            } else {
+              router.replace('/home/HomeScreen');
+            }
+          }, 100);
+        }
+
+        // 5. BODY TAP (Default)
+        else if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          console.log('👆 Body Tapped:', data?.type);
+          await dismissAndCollapse();
+          setTimeout(() => {
             const matchId = data?.matchId;
-            if (data?.type === 'MATCH_REVEALED' || data?.type === 'WAVE_HINT') {
-              if (matchId) {
-                router.push({ pathname: '/home/HintScreen', params: { matchId } });
-                return;
-              }
+            // Route any hint/reveal/skipped notification to HintScreen
+            const hintTypes = ['MATCH_REVEALED', 'WAVE_HINT', 'reveal', 'skipped'];
+            if (matchId && hintTypes.includes(data?.type)) {
+              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              return;
             }
             router.replace('/home/HomeScreen');
           }, 100);
@@ -399,7 +477,7 @@ export default function NotificationHandler() {
             await WaveService.setOpenToWave(curUser.id, act.zoneId);
           } else if (act.action === 'LATER') {
             console.log(`[NotifHandler] ⏳ LATER from native for zone ${act.zoneId}`);
-            await WaveService.setLaterForZone(act.zoneId);
+            await WaveService.setLaterForZone(curUser.id, act.zoneId, act.zoneId);
           }
         } catch (actErr) {
           console.warn('[NotifHandler] Failed to process action', act, actErr?.message || actErr);
