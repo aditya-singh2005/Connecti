@@ -173,11 +173,15 @@ export function useGeofenceService() {
               console.log('✅ Native geofences restored from saved config');
             }
 
+            // ✅ GUARD: Only stop Expo geofencing if it's actually registered
             try {
-              await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
-              console.log('Stopped Expo geofencing on restore because native geofencing is active');
+              const isExpoRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
+              if (isExpoRegistered) {
+                await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+                console.log('Stopped Expo geofencing on restore because native geofencing is active');
+              }
             } catch (_stopError) {
-              // No Expo task registered is fine here.
+              // silently ignore
             }
           } catch (nativeRestoreError) {
             console.log('⚠️ Failed to restore native geofences:', nativeRestoreError.message);
@@ -241,7 +245,9 @@ export function useGeofenceService() {
       if (userLocation) {
         // 🔥 Refresh geofences at OS level immediately on foreground open
         await refreshGeofencesAtLocation(userLocation, 'foreground');
-        await checkZoneEntry(userLocation);
+        // ✅ Use startup-specific check that bypasses the 30-min cooldown
+        // so the user ALWAYS gets at least one wave notification if they're inside a zone
+        await checkZoneEntryOnStartup(userLocation);
       }
     };
 
@@ -256,11 +262,11 @@ export function useGeofenceService() {
     };
   }, []);
 
-  // ✅ HEARTBEAT SYSTEM: Very low battery impact (Every 15 mins)
+  // ✅ HEARTBEAT SYSTEM: Very low battery impact (Every 25 mins)
   function startHeartbeat() {
     if (heartbeatIntervalRef.current) return;
 
-    console.log('💓 Starting 15-minute heartbeat system');
+    console.log('💓 Starting 25-minute heartbeat system');
     heartbeatIntervalRef.current = setInterval(async () => {
       if (currentZoneRef.current && appStateRef.current === 'active') {
         try {
@@ -425,10 +431,14 @@ export function useGeofenceService() {
 
         if (useNativeForUpdate) {
           await NativeGeofenceService.registerGeofences(geofences);
+          // ✅ GUARD: Only stop if actually registered
           try {
-            await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+            const isExpoRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
+            if (isExpoRegistered) {
+              await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+            }
           } catch (_expoStopError) {
-            // No Expo task registered is expected in native mode.
+            // silently ignore
           }
           console.log(`✅ Updated ${geofences.length} native geofences`);
         } else {
@@ -439,9 +449,8 @@ export function useGeofenceService() {
             return false;
           }
 
-          // Check if already registered (running)
+          // ✅ GUARD: Only stop if actually registered
           const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
-
           if (isTaskRegistered) {
             try {
               await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
@@ -484,25 +493,10 @@ export function useGeofenceService() {
           }
         }
 
-        // ✅ START BACKGROUND LOCATION REFRESH FOR BOTH MODES
-        // This ensures distance-based zone updates work in foreground, background, and killed states
-        let locationRefreshSuccess = false;
-        let refreshAttempts = 0;
-        
-        while (!locationRefreshSuccess && refreshAttempts < 3) {
-          try {
-            await Location.startLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME, {
-              accuracy: Location.Accuracy.Balanced,
-              distanceInterval: 500, // Trigger every 500m
-              deferredUpdatesInterval: 60000, // 1 min
-            });
-            locationRefreshSuccess = true;
-            console.log('✅ Location refresh task active for distance-based geofence updates');
-          } catch (e) {
-            console.log(`⚠️ Location refresh task start attempt ${refreshAttempts + 1} failed: ${e.message}`);
-            refreshAttempts++;
-            if (refreshAttempts < 3) await new Promise(r => setTimeout(r, 1000));
-          }
+        // ✅ DELEGATED TO NATIVE: Native PeriodicRefreshWorker now handles killed-state updates.
+        // No persistent foreground service or startLocationUpdatesAsync needed.
+        if (Platform.OS === 'android') {
+          await NativeGeofenceService.startPeriodicRefresh();
         }
 
         setActiveGeofences(geofences);
@@ -520,7 +514,100 @@ export function useGeofenceService() {
     }
   }
 
+  // ✅ STARTUP ZONE CHECK: Bypasses 30-min cooldown.
+  // Called ONCE on app open. Always notifies if user is inside a zone,
+  // unless they've already waved or hit "Later" for that zone.
+  async function checkZoneEntryOnStartup(location) {
+    if (checkZoneEntryLock.current) return;
+    checkZoneEntryLock.current = true;
+
+    try {
+      const allZones = allNearbyZonesRef.current;
+      const activeZones = activeGeofencesRef.current;
+      const zonesToCheck = allZones.length > 0 ? allZones : activeZones;
+
+      if (zonesToCheck.length === 0) return;
+
+      let foundZone = null;
+      let minDistance = Infinity;
+
+      for (const zone of zonesToCheck) {
+        const distance = calculateDistance(
+          location.latitude, location.longitude,
+          zone.latitude, zone.longitude
+        );
+        const radius = zone.radius || 150;
+        const zoneName = zone.name || zone.identifier;
+        if (distance <= radius && distance < minDistance) {
+          minDistance = distance;
+          foundZone = { name: zoneName, distance };
+        }
+      }
+
+      if (!foundZone) {
+        console.log('[STARTUP] Not inside any zone on open');
+        return;
+      }
+
+      const zoneName = foundZone.name;
+      console.log(`[STARTUP] 📍 Inside zone on open: ${zoneName}`);
+
+      // Update current zone
+      setCurrentZone(zoneName);
+      await AsyncStorage.setItem(CURRENT_ZONE_KEY, zoneName);
+
+      // ✅ Skip if user already waved (wave timer active)
+      if (await WaveService.isWavedLocal()) {
+        console.log(`[STARTUP] 🌊 Already waved — syncing presence silently for ${zoneName}`);
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) await WaveService.syncUserZone(user.id, zoneName, location);
+        } catch (_e) { }
+        return;
+      }
+
+      // ✅ Skip if user hit "Later" today
+      const isLater = await WaveService.isLaterSuppressed(zoneName);
+      if (isLater) {
+        console.log(`[STARTUP] ⏳ Zone "${zoneName}" suppressed via Later`);
+        return;
+      }
+
+      // ✅ Sync presence to DB
+      let alreadyOpen = false;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const syncResult = await WaveService.syncUserZone(user.id, zoneName, location);
+          alreadyOpen = syncResult?.openToWave || false;
+        }
+      } catch (dbError) {
+        console.warn('[STARTUP] ⚠️ Presence sync failed:', dbError.message);
+      }
+
+      if (alreadyOpen) {
+        console.log(`[STARTUP] 🌊 Already open_to_wave in ${zoneName}`);
+        return;
+      }
+
+      // ✅ ALWAYS send notification on startup — bypass 30-min cooldown
+      // Also clear the cooldown key so the BG task won't suppress the next real entry
+      const cooldownKey = `last_notification_${zoneName}`;
+      await AsyncStorage.removeItem(cooldownKey);
+
+      await sendSingleZoneNotification(zoneName, Math.round(foundZone.distance), location);
+      console.log(`[STARTUP] ✅ Wave notification sent for ${zoneName}`);
+
+    } catch (error) {
+      console.warn('[STARTUP] ⚠️ Startup zone check error:', error.message);
+    } finally {
+      checkZoneEntryLock.current = false;
+    }
+  }
+
   // ✅ FIXED: Check ALL nearby zones, not just monitored
+  // ✅ ZONE-HOPPING GUARD: 30-min cooldown ONLY for repeated entries into the same zone
+  // (e.g. you walk in/out/in repeatedly). Fresh startup entries bypass this via checkZoneEntryOnStartup.
   async function checkZoneEntry(location) {
     // ✅ LOCK: Prevent concurrent processing that causes duplicate notifications
     if (checkZoneEntryLock.current) return;
@@ -603,6 +690,7 @@ export function useGeofenceService() {
         // ✅ 2. Send foreground notification for zone entry
         // Always send from JS — the native geofence task only fires in background/killed.
         if (!alreadyOpen) {
+          // ✅ ZONE-HOPPING SUPPRESSION REMOVED
           await sendSingleZoneNotification(zoneName, Math.round(foundZone.distance), location);
         } else {
           console.log(`[FG] 🌊 User already open to wave in ${zoneName}, skipping alert`);
@@ -637,18 +725,28 @@ export function useGeofenceService() {
       const stateLabel = executionState.toUpperCase();
 
       console.log(`📢 Sending SINGLE notification: ${zoneName}`);
+      const NativeGeofenceModule = getNativeModule();
 
-      // ✅ COOLDOWN CHECK: Prevent Duplicate Notifications (Sync with Background Task)
-      const outputKey = `last_notification_${zoneName}`;
-      const lastSentTime = await AsyncStorage.getItem(outputKey);
-      const now = Date.now();
-      const cooldownMs = 30 * 60 * 1000; // 30 minutes
-      if (lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
-        console.log(`[useGeofence] ⏳ Cooldown active for ${zoneName}, skipping notification.`);
-        return;
+      // ✅ COOLDOWN CHECK: Synchronized with Native SharedPreferences
+      if (NativeGeofenceModule?.checkAndSetCooldown) {
+          const cooldownPassed = await NativeGeofenceModule.checkAndSetCooldown(zoneName);
+          if (!cooldownPassed) {
+              console.log(`[useGeofence] ⏳ Cooldown active (Native) for ${zoneName}, skipping notification.`);
+              return;
+          }
+      } else {
+          // Fallback to legacy AsyncStorage if native module missing
+          const outputKey = `last_notification_${zoneName}`;
+          const lastSentTime = await AsyncStorage.getItem(outputKey);
+          const now = Date.now();
+          const cooldownMs = 30 * 60 * 1000;
+          if (lastSentTime && (now - parseInt(lastSentTime, 10) < cooldownMs)) {
+            console.log(`[useGeofence] ⏳ Cooldown active (Storage) for ${zoneName}, skipping.`);
+            return;
+          }
+          await AsyncStorage.setItem(outputKey, now.toString());
       }
-
-      await AsyncStorage.setItem(outputKey, now.toString());
+      
       await AsyncStorage.setItem('last_notified_zone', zoneName);
 
       /* 
@@ -955,20 +1053,32 @@ export function useGeofenceService() {
             console.log(`✅ Verified ${registeredNative.length} native geofences are registered`);
             nativeSuccess = true;
             useNative = true;
+
+            // ✅ GUARD: Only stop Expo geofencing if it's actually registered
             try {
-              await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
-              console.log('Stopped Expo geofencing because native geofencing is active');
+              const isExpoRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
+              if (isExpoRegistered) {
+                await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+                console.log('Stopped Expo geofencing because native geofencing is active');
+              }
             } catch (stopExpoError) {
-              console.log('Expo geofencing task was already stopped while enabling native geofencing');
+              console.log('Note: Expo geofencing task was not running:', stopExpoError.message);
             }
 
-            // ✅ ALWAYS: Start background location monitoring for distance-based refresh
-            // even in native mode, we want JS to wake up every 500m to refresh the Os-level geofence list.
-            await Location.startLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME, {
-              accuracy: Location.Accuracy.Balanced,
-              distanceInterval: 500, // Trigger every 500m
-              deferredUpdatesInterval: 60000, // 1 min
-            });
+            // ✅ Start background location monitoring delayed by 5s to let Android context initialize
+            // This prevents the NullPointerException on SharedPreferences.getAll() spam on cold start
+            setTimeout(async () => {
+              try {
+                await Location.startLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME, {
+                  accuracy: Location.Accuracy.Balanced,
+                  distanceInterval: 500,
+                  deferredUpdatesInterval: 60000,
+                });
+                console.log('✅ Location refresh task active (native mode)');
+              } catch (e) {
+                console.warn('⚠️ Location refresh task failed to start (native mode):', e.message);
+              }
+            }, 5000);
           } else {
             console.log('⚠️ Native geofencing not available, falling back to Expo');
           }
@@ -987,7 +1097,7 @@ export function useGeofenceService() {
           throw new Error(`Task ${GEOFENCE_TASK_NAME} not defined. Cannot start Expo geofencing.`);
         }
 
-        // Stop if already running to ensure clean start
+        // ✅ GUARD: Only stop if actually running
         const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(GEOFENCE_TASK_NAME);
         if (isTaskRegistered) {
           try {
@@ -1008,14 +1118,21 @@ export function useGeofenceService() {
             await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, cleanZones);
 
             // ✅ ALSO: Start background location monitoring for distance-based refresh
-            await Location.startLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME, {
-              accuracy: Location.Accuracy.Balanced,
-              distanceInterval: 500, // Trigger every 500m
-              deferredUpdatesInterval: 60000, // 1 min
-            });
+            // Delayed by 5s to prevent NullPointerException on SharedPreferences.getAll()
+            setTimeout(async () => {
+              try {
+                await Location.startLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME, {
+                  accuracy: Location.Accuracy.Balanced,
+                  distanceInterval: 500, // Trigger every 500m
+                  deferredUpdatesInterval: 60000, // 1 min
+                });
+                console.log('✅ Expo geofencing + location refresh active');
+              } catch (e) {
+                console.warn('⚠️ Location refresh task failed to start (Expo fallback):', e.message);
+              }
+            }, 5000);
 
             startSuccess = true;
-            console.log('✅ Expo geofencing + location refresh active');
           } catch (e) {
             console.log(`⚠️ Geofencing start attempt ${startAttempts + 1} failed: ${e.message}`);
             startAttempts++;
@@ -1078,14 +1195,16 @@ export function useGeofenceService() {
     try {
       console.log('🛑 Stopping geofencing...');
 
-      // ✅ Stop native geofencing if it was used
+
+      // ✅ Stop native geofencing and polling if it was used
       try {
         await NativeGeofenceService.removeGeofences();
+        if (NativeGeofenceService.stopZonePoll) {
+          await NativeGeofenceService.stopZonePoll();
+        }
       } catch (e) {
         console.log('ℹ️ No native geofencing to stop');
       }
-
-      // ✅ Stop Expo geofencing and location refresh
       try {
         await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
         await Location.stopLocationUpdatesAsync(LOCATION_REFRESH_TASK_NAME);
@@ -1128,7 +1247,7 @@ export function useGeofenceService() {
         user_lat: lat,
         user_lng: lng,
         search_radius_meters: radiusMeters,
-        max_results: 50, // ✅ Get more zones
+        max_results: 100, // ✅ Max Android Geofence Limit
       });
 
       if (error) throw error;

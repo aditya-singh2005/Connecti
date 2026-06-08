@@ -9,6 +9,9 @@ import { useRouter } from 'expo-router';
 import FCMTokenService from '../services/FCMTokenService';
 import { WaveService } from '../services/WaveService';
 
+// Module-level guard to prevent duplicate listener registration
+let listenersRegistered = false;
+
 // ✅ Ensure notifications show when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -41,12 +44,10 @@ export default function NotificationHandler() {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
-      if (notificationListener.current) {
-        notificationListener.current.remove();
-      }
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
+      // Note: we don't automatically remove global listeners here because
+      // we only want to register them once per app lifecycle.
+      // If we remove them on component unmount, they might not receive
+      // responses if the user taps a notification while outside this component.
     };
   }, [user?.id]);
 
@@ -127,17 +128,20 @@ export default function NotificationHandler() {
         console.log('✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED');
       }
 
-      // Set up notification listeners
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        console.log('📨 Notification received:', notification.request.content.title);
-      });
+      // ✅ GUARD: Only set up global listeners once per app session
+      if (!listenersRegistered) {
+        listenersRegistered = true;
+        
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+          console.log('📨 Notification received:', notification.request.content.title);
+        });
 
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
-        const actionId = response.actionIdentifier;
-        const data = response.notification.request.content.data;
-        const notificationId = response.notification.request.identifier;
+        responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
+          const actionId = response.actionIdentifier;
+          const data = response.notification.request.content.data;
+          const notificationId = response.notification.request.identifier;
 
-        console.log('👆 Notification Response Received:', actionId);
+          console.log('👆 Notification Response Received:', actionId);
 
         // Helper: Dismiss notification and collapse panel
         const dismissAndCollapse = async () => {
@@ -330,6 +334,7 @@ export default function NotificationHandler() {
           }, 100);
         }
       });
+      } // <-- CLOSED if (!listenersRegistered) guard
 
       // Check if chat notifications are enabled
       const { data: profile } = await supabase

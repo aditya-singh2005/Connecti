@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { useFriendships } from "../../hooks/useFriendships";
 import { useGeofenceService } from "../../hooks/useGeofenceService";
+import { WaveService } from "../../services/WaveService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../../lib/supabase"; // Import Supabase
@@ -134,6 +135,7 @@ export default function HomeScreen() {
       }
 
       if (data) {
+
         const matchTime = new Date(data.matched_at).getTime();
         const age = Date.now() - matchTime;
         if (age < 30 * 60 * 1000) {

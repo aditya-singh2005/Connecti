@@ -99,7 +99,16 @@ export class WaveService {
 
                 // Sync with native side
                 if (Platform.OS === 'android') {
-                    await NativeGeofenceService.setIsWaved(openToWaveStatus, timerData?.expiryTime || 0);
+                    // Always try to sync session context just in case
+                    const { data: { user: authUser } } = await supabase.auth.getUser();
+                    if (authUser) {
+                        await NativeGeofenceService.setSessionContext(
+                            authUser.id,
+                            process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://qczxsjfkjpcvjbqvcqbc.supabase.co',
+                            process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''
+                        );
+                    }
+                    await NativeGeofenceService.setIsWaved(openToWaveStatus, timerData?.expiryTime ? (timerData.expiryTime - Date.now()) : 0);
                 }
 
                 console.log(`[Sync] ✅ Presence synced in ${finalZoneName} (Open: ${openToWaveStatus})`);
@@ -127,6 +136,20 @@ export class WaveService {
             this.scheduleAutoReset(userId, expiryTime);
 
             await this.syncUserZone(userId, zoneName, null, true);
+
+            // Notify native side immediately for killed-state persistence
+            if (Platform.OS === 'android') {
+                // Cancel inactivity reminders/removal for this zone
+                try {
+                    const {  data: zone } = await supabase.from('geofence_zones').select('id').eq('name', zoneName).maybeSingle();
+                    if (zone) {
+                        await NativeGeofenceService.cancelInactivityTimers(zone.id);
+                    }
+                } catch (_e) {}
+                
+                await NativeGeofenceService.setIsWaved(true, WAVE_DURATION_MS);
+            }
+            
             return true;
         } catch (error) {
             console.error('❌ Error in setOpenToWave:', error);
@@ -286,12 +309,12 @@ export class WaveService {
             // Clear remote record OR set open_to_wave to false in DB
             console.log(`🗑️ [WaveService] Wave expired. Clearing record for user ${userId}.`);
 
-            // No zone -> clear remote record
-            console.log(`🗑️ [WaveService] User left all zones after 30 min. Clearing record.`);
+            // No zone -> clear remote record specifically for the expired zone
+            console.log(`🗑️ [WaveService] User left all zones after 30 min. Clearing record for ${wavedZone}.`);
             await supabase
                 .from('active_zone_users')
                 .delete()
-                .eq('user_id', userId);
+                .match({ user_id: userId, zone_id: wavedZone });
 
             await AsyncStorage.removeItem(WAVE_TIMER_KEY);
             await AsyncStorage.removeItem('current_zone');
@@ -345,4 +368,5 @@ export class WaveService {
             return 0;
         }
     }
+
 }

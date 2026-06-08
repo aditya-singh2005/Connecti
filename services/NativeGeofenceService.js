@@ -15,11 +15,12 @@ function normalizeNativeGeofence(zone, index) {
     (zone?.id != null ? `zone_${zone.id}` : `zone_${index}`);
 
   return {
-    id: String(identifier),
+    identifier: String(identifier),
     latitude,
     longitude,
     radius,
     transitionTypes: 1, // GEOFENCE_TRANSITION_ENTER
+    name: String(zone?.name || identifier),
   };
 }
 
@@ -46,7 +47,7 @@ class NativeGeofenceService {
     }
 
     try {
-      const available = await NativeGeofenceModule.checkGeofencingAvailability();
+      const available = await NativeGeofenceModule.isAvailable();
       console.log(`${available ? '✅' : '❌'} Native geofencing available: ${available}`);
       return available;
     } catch (error) {
@@ -121,44 +122,109 @@ class NativeGeofenceService {
    * Gets list of currently registered geofence IDs
    */
   async getRegisteredGeofences() {
-    const NativeGeofenceModule = getNativeModule();
-    if (!NativeGeofenceModule) {
-      return [];
-    }
-
-    try {
-      const geofenceIds = await NativeGeofenceModule.getRegisteredGeofences();
-      console.log(`ℹ️ Currently registered geofences: ${geofenceIds.length}`);
-      return geofenceIds;
-    } catch (error) {
-      console.error('❌ Failed to get registered geofences:', error.message);
-      return [];
-    }
+    return []; // Native module doesn't support listing yet
   }
 
   async setAppRuntimeState(state, timestamp = Date.now()) {
-    if (Platform.OS !== 'android') return;
+    // Native module doesn't support state sync yet
+  }
 
+  /**
+   * Syncs user session context to native for background tasks
+   */
+  async setSessionContext(userId, supabaseUrl, supabaseKey) {
+    if (Platform.OS !== 'android') return false;
     const NativeGeofenceModule = getNativeModule();
-    if (!NativeGeofenceModule?.updateAppRuntimeState) return;
+    if (!NativeGeofenceModule) return false;
 
     try {
-      await NativeGeofenceModule.updateAppRuntimeState(String(state), Number(timestamp));
+      console.log('🔑 Syncing session context to native...');
+      return await NativeGeofenceModule.setSessionContext(userId, supabaseUrl, supabaseKey);
     } catch (error) {
-      console.log('⚠️ Failed to sync runtime state to native:', error?.message || error);
+      console.error('❌ Failed to set native session context:', error.message);
+      return false;
     }
   }
 
+  /**
+   * Updates the "Waved" state in the native module
+   */
   async setIsWaved(isWaved, expiryTimeMs = 0) {
-    if (Platform.OS !== 'android') return;
-
+    if (Platform.OS !== 'android') return false;
     const NativeGeofenceModule = getNativeModule();
-    if (!NativeGeofenceModule?.setIsWaved) return;
+    if (!NativeGeofenceModule) return false;
 
     try {
-      await NativeGeofenceModule.setIsWaved(Boolean(isWaved), Number(expiryTimeMs));
+      console.log(`${isWaved ? '🌊' : '🛑'} Setting native isWaved: ${isWaved}`);
+      return await NativeGeofenceModule.setIsWaved(isWaved, expiryTimeMs);
     } catch (error) {
-      console.log('⚠️ Failed to sync wave state to native:', error?.message || error);
+      console.error('❌ Failed to set native isWaved:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Drains pending notification actions (WAVE, LATER) from native
+   */
+  async getPendingActions() {
+    if (Platform.OS !== 'android') return [];
+    const NativeGeofenceModule = getNativeModule();
+    if (!NativeGeofenceModule?.getPendingActions) return [];
+
+    try {
+      return await NativeGeofenceModule.getPendingActions();
+    } catch (error) {
+      console.error('❌ Failed to get pending actions:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Clears pending notification actions from native
+   */
+  async clearPendingActions() {
+    if (Platform.OS !== 'android') return false;
+    const NativeGeofenceModule = getNativeModule();
+    if (!NativeGeofenceModule?.clearPendingActions) return false;
+
+    try {
+      return await NativeGeofenceModule.clearPendingActions();
+    } catch (error) {
+      console.error('❌ Failed to clear pending actions:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Drains pending waves (arrivals) from native
+   */
+  async getPendingWaves() {
+    if (Platform.OS !== 'android') return [];
+    const NativeGeofenceModule = getNativeModule();
+    if (!NativeGeofenceModule?.getPendingWaves) return [];
+
+    try {
+      return await NativeGeofenceModule.getPendingWaves();
+    } catch (error) {
+      console.error('❌ Failed to get pending waves:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Schedules a 15-min periodic WorkManager for killed-state background refresh
+   */
+  async startPeriodicRefresh() {
+    if (Platform.OS !== 'android') return false;
+    const NativeGeofenceModule = getNativeModule();
+    if (!NativeGeofenceModule?.startPeriodicRefresh) return false;
+
+    try {
+      console.log('🔄 Scheduling native periodic geofence refresh...');
+      return await NativeGeofenceModule.startPeriodicRefresh();
+    } catch (error) {
+      console.error('❌ Failed to schedule periodic refresh:', error.message);
+      return false;
     }
   }
 }
