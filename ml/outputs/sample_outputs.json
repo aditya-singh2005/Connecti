@@ -1,0 +1,559 @@
+[
+  {
+    "pair": "PAIR 1 \u2014 HIGH MATCH",
+    "user_a": "u001",
+    "user_b": "u003",
+    "relationship": {
+      "user_a": "u001",
+      "user_b": "u003",
+      "relationship_score": 72,
+      "explanation": "Relationship based on: both attended Delhi Public School, R.K. Puram; both studied at Delhi Technological University; both work at Google India; 2 mutual friend(s); share interests in hiking, chess; share skills in Python, Machine Learning; met ~4 times before; very similar profiles.",
+      "details": {
+        "shared_school": true,
+        "shared_college": true,
+        "shared_workplace": true,
+        "mutual_friends": [
+          "u007",
+          "u012"
+        ],
+        "common_interests": [
+          "hiking",
+          "chess"
+        ],
+        "common_skills": [
+          "Python",
+          "Machine Learning"
+        ],
+        "previous_meetups_avg": 4.5,
+        "days_since_last_meeting": 139,
+        "embedding_similarity": 0.7499,
+        "score_breakdown": {
+          "shared_school": 10.0,
+          "shared_college": 15.0,
+          "shared_workplace": 15.0,
+          "mutual_friends_count": 2,
+          "mutual_friends_score": 4.0,
+          "common_interests": [
+            "hiking",
+            "chess"
+          ],
+          "interest_jaccard": 0.333,
+          "interest_score": 5.0,
+          "common_skills": [
+            "Python",
+            "Machine Learning"
+          ],
+          "skill_jaccard": 0.333,
+          "skill_score": 3.33,
+          "previous_meetups_avg": 4.5,
+          "meetup_score": 9.0,
+          "days_since_last_meeting": 139,
+          "recency_score": 3.55,
+          "embedding_similarity": 0.7499,
+          "embedding_bonus": 7.5
+        }
+      }
+    },
+    "hints": {
+      "user_a": "u001",
+      "user_b": "u003",
+      "max_level": 5,
+      "total_hints": 33,
+      "hints": [
+        {
+          "level": 1,
+          "category": "college",
+          "hint": "You share a higher-education connection."
+        },
+        {
+          "level": 1,
+          "category": "education",
+          "hint": "You share an educational background."
+        },
+        {
+          "level": 1,
+          "category": "interests",
+          "hint": "You share some hobbies."
+        },
+        {
+          "level": 1,
+          "category": "location",
+          "hint": "You are in the same part of the country."
+        },
+        {
+          "level": 1,
+          "category": "skills",
+          "hint": "You have overlapping professional skills."
+        },
+        {
+          "level": 1,
+          "category": "social",
+          "hint": "You move in similar social circles."
+        },
+        {
+          "level": 1,
+          "category": "workplace",
+          "hint": "You have a professional connection."
+        },
+        {
+          "level": 2,
+          "category": "college",
+          "hint": "You both studied at a top engineering university."
+        },
+        {
+          "level": 2,
+          "category": "education",
+          "hint": "You both went to the same school."
+        },
+        {
+          "level": 2,
+          "category": "interests",
+          "hint": "You have 2 interest(s) in common."
+        },
+        {
+          "level": 2,
+          "category": "location",
+          "hint": "You're both based in North India."
+        },
+        {
+          "level": 2,
+          "category": "skills",
+          "hint": "You both work in AI/ML."
+        },
+        {
+          "level": 2,
+          "category": "social",
+          "hint": "You have friends in common."
+        },
+        {
+          "level": 2,
+          "category": "workplace",
+          "hint": "You both work at a major tech company."
+        },
+        {
+          "level": 3,
+          "category": "college",
+          "hint": "You attended the same college."
+        },
+        {
+          "level": 3,
+          "category": "education",
+          "hint": "You both went to a school in R.K. Puram."
+        },
+        {
+          "level": 3,
+          "category": "interests",
+          "hint": "You both enjoy intellectual hobbies."
+        },
+        {
+          "level": 3,
+          "category": "location",
+          "hint": "You live in the same city."
+        },
+        {
+          "level": 3,
+          "category": "skills",
+          "hint": "You share 2 technical skill(s)."
+        },
+        {
+          "level": 3,
+          "category": "social",
+          "hint": "You share 2 mutual friend(s)."
+        },
+        {
+          "level": 3,
+          "category": "workplace",
+          "hint": "You are currently colleagues."
+        },
+        {
+          "level": 4,
+          "category": "college",
+          "hint": "Your college name starts with 'Del'."
+        },
+        {
+          "level": 4,
+          "category": "education",
+          "hint": "Your school name starts with 'D'."
+        },
+        {
+          "level": 4,
+          "category": "interests",
+          "hint": "One shared interest starts with 'H'."
+        },
+        {
+          "level": 4,
+          "category": "location",
+          "hint": "Your city starts with the letter 'D'."
+        },
+        {
+          "level": 4,
+          "category": "skills",
+          "hint": "One shared skill starts with 'P'."
+        },
+        {
+          "level": 4,
+          "category": "workplace",
+          "hint": "Your company name starts with 'G'."
+        },
+        {
+          "level": 5,
+          "category": "college",
+          "hint": "You both attended Delhi Technological University."
+        },
+        {
+          "level": 5,
+          "category": "education",
+          "hint": "You both attended Delhi Public School, R.K. Puram."
+        },
+        {
+          "level": 5,
+          "category": "interests",
+          "hint": "You both enjoy hiking, chess."
+        },
+        {
+          "level": 5,
+          "category": "location",
+          "hint": "You're both in Delhi."
+        },
+        {
+          "level": 5,
+          "category": "skills",
+          "hint": "You both know Python, Machine Learning."
+        },
+        {
+          "level": 5,
+          "category": "workplace",
+          "hint": "You both work at Google India."
+        }
+      ]
+    },
+    "reunion": {
+      "user_a": "u001",
+      "user_b": "u003",
+      "reunion_probability": 91,
+      "explanation": "Strong shared history, high profile similarity, 2 mutual friend(s), shared college background, same workplace, frequent past meetups, shared interests in hiking, chess.",
+      "recommendation": "Highly recommended to reconnect \u2014 you have a strong foundation.",
+      "factors": {
+        "relationship_score": 72,
+        "mutual_friends": 2,
+        "previous_meetups_avg": 4.5,
+        "profile_similarity": 0.7499,
+        "recency_factor": 0.709,
+        "weighted_sum": 0.5864
+      }
+    }
+  },
+  {
+    "pair": "PAIR 2 \u2014 MEDIUM MATCH",
+    "user_a": "u002",
+    "user_b": "u007",
+    "relationship": {
+      "user_a": "u002",
+      "user_b": "u007",
+      "relationship_score": 41,
+      "explanation": "Relationship based on: both studied at Delhi Technological University; 1 mutual friend(s); share interests in open-source; share skills in React; met ~4 times before; very similar profiles.",
+      "details": {
+        "shared_school": false,
+        "shared_college": true,
+        "shared_workplace": false,
+        "mutual_friends": [
+          "u003"
+        ],
+        "common_interests": [
+          "open-source"
+        ],
+        "common_skills": [
+          "React"
+        ],
+        "previous_meetups_avg": 4.5,
+        "days_since_last_meeting": 100,
+        "embedding_similarity": 0.7509,
+        "score_breakdown": {
+          "shared_school": 0.0,
+          "shared_college": 15.0,
+          "shared_workplace": 0.0,
+          "mutual_friends_count": 1,
+          "mutual_friends_score": 2.0,
+          "common_interests": [
+            "open-source"
+          ],
+          "interest_jaccard": 0.143,
+          "interest_score": 2.14,
+          "common_skills": [
+            "React"
+          ],
+          "skill_jaccard": 0.143,
+          "skill_score": 1.43,
+          "previous_meetups_avg": 4.5,
+          "meetup_score": 9.0,
+          "days_since_last_meeting": 100,
+          "recency_score": 4.07,
+          "embedding_similarity": 0.7509,
+          "embedding_bonus": 7.51
+        }
+      }
+    },
+    "hints": {
+      "user_a": "u002",
+      "user_b": "u007",
+      "max_level": 5,
+      "total_hints": 23,
+      "hints": [
+        {
+          "level": 1,
+          "category": "college",
+          "hint": "You share a higher-education connection."
+        },
+        {
+          "level": 1,
+          "category": "interests",
+          "hint": "You share some hobbies."
+        },
+        {
+          "level": 1,
+          "category": "location",
+          "hint": "You are in the same part of the country."
+        },
+        {
+          "level": 1,
+          "category": "skills",
+          "hint": "You have overlapping professional skills."
+        },
+        {
+          "level": 1,
+          "category": "social",
+          "hint": "You move in similar social circles."
+        },
+        {
+          "level": 2,
+          "category": "college",
+          "hint": "You both studied at a top engineering university."
+        },
+        {
+          "level": 2,
+          "category": "interests",
+          "hint": "You have 1 interest(s) in common."
+        },
+        {
+          "level": 2,
+          "category": "location",
+          "hint": "You're both based in North India."
+        },
+        {
+          "level": 2,
+          "category": "skills",
+          "hint": "You both work in web development."
+        },
+        {
+          "level": 2,
+          "category": "social",
+          "hint": "You have friends in common."
+        },
+        {
+          "level": 3,
+          "category": "college",
+          "hint": "You attended the same college."
+        },
+        {
+          "level": 3,
+          "category": "interests",
+          "hint": "You both enjoy intellectual hobbies."
+        },
+        {
+          "level": 3,
+          "category": "location",
+          "hint": "You live in the same city."
+        },
+        {
+          "level": 3,
+          "category": "skills",
+          "hint": "You share 1 technical skill(s)."
+        },
+        {
+          "level": 3,
+          "category": "social",
+          "hint": "You share 1 mutual friend(s)."
+        },
+        {
+          "level": 4,
+          "category": "college",
+          "hint": "Your college name starts with 'Del'."
+        },
+        {
+          "level": 4,
+          "category": "interests",
+          "hint": "One shared interest starts with 'O'."
+        },
+        {
+          "level": 4,
+          "category": "location",
+          "hint": "Your city starts with the letter 'D'."
+        },
+        {
+          "level": 4,
+          "category": "skills",
+          "hint": "One shared skill starts with 'R'."
+        },
+        {
+          "level": 5,
+          "category": "college",
+          "hint": "You both attended Delhi Technological University."
+        },
+        {
+          "level": 5,
+          "category": "interests",
+          "hint": "You both enjoy open-source."
+        },
+        {
+          "level": 5,
+          "category": "location",
+          "hint": "You're both in Delhi."
+        },
+        {
+          "level": 5,
+          "category": "skills",
+          "hint": "You both know React."
+        }
+      ]
+    },
+    "reunion": {
+      "user_a": "u002",
+      "user_b": "u007",
+      "reunion_probability": 77,
+      "explanation": "Moderate shared history, high profile similarity, 1 mutual friend(s), shared college background, frequent past meetups, shared interests in open-source.",
+      "recommendation": "Highly recommended to reconnect \u2014 you have a strong foundation.",
+      "factors": {
+        "relationship_score": 41,
+        "mutual_friends": 1,
+        "previous_meetups_avg": 4.5,
+        "profile_similarity": 0.7509,
+        "recency_factor": 0.813,
+        "weighted_sum": 0.4529
+      }
+    }
+  },
+  {
+    "pair": "PAIR 3 \u2014 LOW MATCH",
+    "user_a": "u004",
+    "user_b": "u008",
+    "relationship": {
+      "user_a": "u004",
+      "user_b": "u008",
+      "relationship_score": 18,
+      "explanation": "Relationship based on: share interests in travel, photography; share skills in Python; met ~1 times before; very similar profiles.",
+      "details": {
+        "shared_school": false,
+        "shared_college": false,
+        "shared_workplace": false,
+        "mutual_friends": [],
+        "common_interests": [
+          "travel",
+          "photography"
+        ],
+        "common_skills": [
+          "Python"
+        ],
+        "previous_meetups_avg": 1.0,
+        "days_since_last_meeting": 358,
+        "embedding_similarity": 0.7554,
+        "score_breakdown": {
+          "shared_school": 0.0,
+          "shared_college": 0.0,
+          "shared_workplace": 0.0,
+          "mutual_friends_count": 0,
+          "mutual_friends_score": 0.0,
+          "common_interests": [
+            "travel",
+            "photography"
+          ],
+          "interest_jaccard": 0.333,
+          "interest_score": 5.0,
+          "common_skills": [
+            "Python"
+          ],
+          "skill_jaccard": 0.143,
+          "skill_score": 1.43,
+          "previous_meetups_avg": 1.0,
+          "meetup_score": 2.0,
+          "days_since_last_meeting": 358,
+          "recency_score": 1.56,
+          "embedding_similarity": 0.7554,
+          "embedding_bonus": 7.55
+        }
+      }
+    },
+    "hints": {
+      "user_a": "u004",
+      "user_b": "u008",
+      "max_level": 5,
+      "total_hints": 10,
+      "hints": [
+        {
+          "level": 1,
+          "category": "interests",
+          "hint": "You share some hobbies."
+        },
+        {
+          "level": 1,
+          "category": "skills",
+          "hint": "You have overlapping professional skills."
+        },
+        {
+          "level": 2,
+          "category": "interests",
+          "hint": "You have 2 interest(s) in common."
+        },
+        {
+          "level": 2,
+          "category": "skills",
+          "hint": "You both work in technology."
+        },
+        {
+          "level": 3,
+          "category": "interests",
+          "hint": "You both enjoy creative pursuits."
+        },
+        {
+          "level": 3,
+          "category": "skills",
+          "hint": "You share 1 technical skill(s)."
+        },
+        {
+          "level": 4,
+          "category": "interests",
+          "hint": "One shared interest starts with 'T'."
+        },
+        {
+          "level": 4,
+          "category": "skills",
+          "hint": "One shared skill starts with 'P'."
+        },
+        {
+          "level": 5,
+          "category": "interests",
+          "hint": "You both enjoy travel, photography."
+        },
+        {
+          "level": 5,
+          "category": "skills",
+          "hint": "You both know Python."
+        }
+      ]
+    },
+    "reunion": {
+      "user_a": "u004",
+      "user_b": "u008",
+      "reunion_probability": 32,
+      "explanation": "Limited shared history, high profile similarity, some past meetups, shared interests in travel, photography.",
+      "recommendation": "Light connection \u2014 maybe a casual wave for now.",
+      "factors": {
+        "relationship_score": 18,
+        "mutual_friends": 0,
+        "previous_meetups_avg": 1.0,
+        "profile_similarity": 0.7554,
+        "recency_factor": 0.311,
+        "weighted_sum": 0.2037
+      }
+    }
+  }
+]
