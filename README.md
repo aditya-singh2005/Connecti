@@ -6,6 +6,7 @@
 ![Platform](https://img.shields.io/badge/Platform-React%20Native-blue)
 ![Backend](https://img.shields.io/badge/Backend-Node.js-green)
 ![AI](https://img.shields.io/badge/AI-Sentence%20Transformers-red)
+![Database](https://img.shields.io/badge/Database-Supabase-3ECF8E?logo=supabase&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
