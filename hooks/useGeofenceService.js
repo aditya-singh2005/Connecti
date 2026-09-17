@@ -1,6 +1,6 @@
 // hooks/useGeofenceService.js - FIXED: Better detection + Single notifications + All zones
 import { useState, useEffect, useRef } from 'react';
-import { Platform, Alert, Linking, AppState } from 'react-native';
+import { Platform, Alert, Linking, AppState, NativeModules } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
@@ -725,7 +725,7 @@ export function useGeofenceService() {
       const stateLabel = executionState.toUpperCase();
 
       console.log(`📢 Sending SINGLE notification: ${zoneName}`);
-      const NativeGeofenceModule = getNativeModule();
+      const NativeGeofenceModule = NativeModules?.NativeGeofenceModule;
 
       // ✅ COOLDOWN CHECK: Synchronized with Native SharedPreferences
       if (NativeGeofenceModule?.checkAndSetCooldown) {

@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { AppState, NativeModules, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { AuthProvider } from "../context/AuthProvider";
+import { ConnectionsProvider } from "../hooks/useConnections";
 import { ThemeProvider } from "../context/ThemeContext";
 import NotificationHandler from "../components/NotificationHandler";
 import { WaveService } from '../services/WaveService';
@@ -210,15 +211,17 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NotificationHandler />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="login" />
-          <Stack.Screen name="signup" />
-          <Stack.Screen name="create-profile" />
-          <Stack.Screen name="location-test" />
-          <Stack.Screen name="home" options={{ headerShown: false }} />
-        </Stack>
+        <ConnectionsProvider>
+          <NotificationHandler />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="signup" />
+            <Stack.Screen name="create-profile" />
+            <Stack.Screen name="location-test" />
+            <Stack.Screen name="home" options={{ headerShown: false }} />
+          </Stack>
+        </ConnectionsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

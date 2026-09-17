@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, AppState } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, AppState } from 'react-native';
 import { DebugService } from '../services/DebugService';
 
 export const DebugLogger = ({ screenName, maxLogs = 100, initiallyExpanded = false }) => {
     const [logs, setLogs] = useState([]);
     const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
     const [appState, setAppState] = useState(AppState.currentState);
-    const flatListRef = useRef(null);
+    const scrollViewRef = useRef(null);
     const subscriptionRef = useRef(null);
 
     useEffect(() => {
@@ -119,16 +119,19 @@ export const DebugLogger = ({ screenName, maxLogs = 100, initiallyExpanded = fal
                         <Text style={styles.toolbarInfo}>Max: {maxLogs} logs</Text>
                     </View>
 
-                    <FlatList
-                        ref={flatListRef}
-                        data={logs}
-                        renderItem={renderLogItem}
-                        keyExtractor={(item, index) => index.toString()}
+                    <ScrollView
+                        ref={scrollViewRef}
                         style={styles.list}
                         contentContainerStyle={styles.listContent}
-                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                    />
+                        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                        nestedScrollEnabled={true}
+                    >
+                        {logs.map((item, index) => (
+                            <React.Fragment key={index.toString()}>
+                                {renderLogItem({ item, index })}
+                            </React.Fragment>
+                        ))}
+                    </ScrollView>
                 </View>
             )}
         </View>

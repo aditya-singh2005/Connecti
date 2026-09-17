@@ -1,981 +1,287 @@
-import { useEffect, useState } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ActivityIndicator, 
-  Alert, 
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
-import { useRouter } from "expo-router";
-import { supabase } from "../../lib/supabase";
-import { useFriendships } from "../../hooks/useFriendships";
-import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../context/AuthProvider';
+import { useFriendships } from '../../hooks/useFriendships';
+import { supabase } from '../../lib/supabase';
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
+  const { friendCount } = useFriendships();
+
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Edit form state
-  const [editForm, setEditForm] = useState({
-    name: '',
-    contact: '',
-    username: '',
-    date_of_birth: '',
-    bio: '',
-    city: '',
-    country: '',
-  });
-
-  // Use friendships hook
-  const {
-    friends,
-    pendingRequests,
-    friendCount,
-    pendingCount
-  } = useFriendships();
+  const [smartReconnect, setSmartReconnect] = useState(true);
+  const [incognito, setIncognito] = useState(false);
 
   useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  const fetchProfile = async () => {
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        Alert.alert("Error", "No logged-in user found");
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (error) throw error;
-
-      setProfile({ 
-        ...data, 
-        email: user.email,
-        userId: user.id 
-      });
-    } catch (err) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setLoading(false);
+    if (user?.id) {
+      supabase.from('profiles').select('*').eq('id', user.id).single()
+        .then(({ data }) => { if (data) setProfile(data); });
     }
-  };
+  }, [user]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchProfile();
-    setRefreshing(false);
-  };
-
-  const getCurrentLocation = async () => {
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to update your location');
-        return null;
-      }
-
-      const location = await Location.getCurrentPositionAsync({});
-      return {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
-    } catch (error) {
-      console.error('Error getting location:', error);
-      return null;
-    }
-  };
-
-  const canChangeUsername = () => {
-    if (!profile.username_last_changed) return true;
-    
-    const lastChanged = new Date(profile.username_last_changed);
-    const daysSinceChange = (Date.now() - lastChanged.getTime()) / (1000 * 60 * 60 * 24);
-    
-    return daysSinceChange >= 30;
-  };
-
-  const getDaysUntilUsernameChange = () => {
-    if (!profile.username_last_changed) return 0;
-    
-    const lastChanged = new Date(profile.username_last_changed);
-    const daysSinceChange = (Date.now() - lastChanged.getTime()) / (1000 * 60 * 60 * 24);
-    
-    return Math.ceil(30 - daysSinceChange);
-  };
-
-  const openEditModal = () => {
-    setEditForm({
-      name: profile.name || '',
-      contact: profile.contact || '',
-      username: profile.username || '',
-      date_of_birth: profile.date_of_birth || '',
-      bio: profile.bio || '',
-      city: profile.city || '',
-      country: profile.country || '',
-    });
-    setEditModalVisible(true);
-  };
-
-  const handleSaveProfile = async () => {
-    try {
-      setSaving(true);
-
-      // Check username change eligibility
-      if (editForm.username && editForm.username !== profile.username) {
-        if (!canChangeUsername()) {
-          const daysLeft = getDaysUntilUsernameChange();
-          Alert.alert(
-            "Username Change Restricted", 
-            `You can change your username again in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
-          );
-          setSaving(false);
-          return;
-        }
-
-        // Check if username is already taken
-        const { data: existingUser } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("username", editForm.username)
-          .neq("id", profile.userId)
-          .single();
-
-        if (existingUser) {
-          Alert.alert("Error", "Username already taken");
-          setSaving(false);
-          return;
-        }
-      }
-
-      // Get current location automatically
-      const locationData = await getCurrentLocation();
-
-      // Prepare update data
-      const updateData = {
-        name: editForm.name || null,
-        contact: editForm.contact || null,
-        username: editForm.username || null,
-        date_of_birth: editForm.date_of_birth || null,
-        bio: editForm.bio || null,
-        city: editForm.city || null,
-        country: editForm.country || null,
-        updated_at: new Date().toISOString(),
-      };
-
-      // Update username_last_changed if username was changed
-      if (editForm.username && editForm.username !== profile.username) {
-        updateData.username_last_changed = new Date().toISOString();
-      }
-
-      // Add location data if available
-      if (locationData) {
-        updateData.latitude = locationData.latitude;
-        updateData.longitude = locationData.longitude;
-        updateData.location_updated_at = new Date().toISOString();
-      }
-
-      const { error } = await supabase
-        .from("profiles")
-        .update(updateData)
-        .eq("id", profile.userId);
-
-      if (error) throw error;
-
-      Alert.alert("Success", "Profile updated successfully");
-      setEditModalVisible(false);
-      await fetchProfile();
-    } catch (err) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const getJoinDate = () => {
-    if (!profile?.created_at) return "Recently";
-    const date = new Date(profile.created_at);
-    const options = { month: 'short', year: 'numeric' };
-    return date.toLocaleDateString('en-US', options);
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0066FF" />
-      </View>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>No profile data found.</Text>
-      </View>
-    );
-  }
+  const name = profile?.name || user?.user_metadata?.first_name || 'Aditya';
+  const bio = profile?.bio || 'Exploring the intersection of tech and nature. Product Designer & Coffee enthusiast. ☕';
 
   return (
-    <>
-      <ScrollView 
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Profile Header Card */}
-        <View style={styles.profileCard}>
-          {/* Avatar and Basic Info */}
-          <View style={styles.profileTop}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>
-                  {profile.name ? profile.name.charAt(0).toUpperCase() : "?"}
-                </Text>
-              </View>
-              <View style={styles.statusIndicator} />
-            </View>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+            <Ionicons name="arrow-back" size={20} color="#111827" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Profile</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/home/SettingsScreen')}>
+            <Ionicons name="settings-outline" size={20} color="#111827" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#111827" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-            <View style={styles.profileBasicInfo}>
-              <Text style={styles.profileName}>{profile.name || 'Anonymous User'}</Text>
-              {profile.username && (
-                <Text style={styles.profileUsername}>@{profile.username}</Text>
-              )}
-              <View style={styles.badgeContainer}>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Member since {getJoinDate()}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Bio Section */}
-          {profile.bio && (
-            <View style={styles.bioSection}>
-              <Text style={styles.bioText}>{profile.bio}</Text>
-            </View>
-          )}
-
-          {/* Stats Row */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Posts</Text>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <TouchableOpacity 
-              style={styles.statItem}
-              onPress={() => router.push('/home/FriendsListScreen')}
-            >
-              <Text style={styles.statNumber}>{friendCount}</Text>
-              <Text style={styles.statLabel}>Friends</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Profile Info */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatarWrap}>
+            <Image 
+              source={{ uri: profile?.avatar_url || 'https://i.pravatar.cc/150?img=11' }} 
+              style={styles.avatar} 
+            />
+            <TouchableOpacity style={styles.editBadge}>
+              <Ionicons name="pencil" size={14} color="#FFF" />
             </TouchableOpacity>
+          </View>
+          <Text style={styles.nameText}>{name}</Text>
+          <Text style={styles.bioText}>{bio}</Text>
+        </View>
 
-            <View style={styles.statDivider} />
+        {/* Action Buttons */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.editBtn}>
+            <Ionicons name="person-outline" size={16} color="#FFF" />
+            <Text style={styles.editBtnText}>Edit Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.shareBtn}>
+            <Ionicons name="share-social-outline" size={16} color="#374151" />
+            <Text style={styles.shareBtnText}>Share</Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Nearby</Text>
+        {/* Stats */}
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={[styles.statNum, { color: '#5C7CFA' }]}>14</Text>
+            <Text style={styles.statLabel}>MUTUAL</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Text style={styles.statNum}>{friendCount || 0}</Text>
+            <Text style={styles.statLabel}>CONNECTIONS</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Text style={styles.statNum}>89</Text>
+            <Text style={styles.statLabel}>RECONNECTED</Text>
+          </View>
+        </View>
+
+        {/* Smart Reconnect Toggle */}
+        <View style={styles.smartCard}>
+          <View style={styles.smartIconWrap}>
+            <Ionicons name="flash" size={20} color="#FFF" />
+          </View>
+          <View style={styles.smartTextWrap}>
+            <Text style={styles.smartTitle}>Smart Reconnect</Text>
+            <Text style={styles.smartDesc}>AI will suggest optimal times to reach out.</Text>
+          </View>
+          <Switch 
+            value={smartReconnect} 
+            onValueChange={setSmartReconnect}
+            trackColor={{ false: '#E5E7EB', true: '#5C7CFA' }}
+            thumbColor="#FFF"
+          />
+        </View>
+
+        {/* Interests */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Interests</Text>
+            <TouchableOpacity><Text style={styles.addText}>Add New</Text></TouchableOpacity>
+          </View>
+          <View style={styles.tagsContainer}>
+            <View style={[styles.tag, { borderColor: '#DBEAFE' }]}>
+              <Ionicons name="laptop-outline" size={14} color="#3B82F6" />
+              <Text style={styles.tagText}>Tech</Text>
+            </View>
+            <View style={[styles.tag, { borderColor: '#FEE2E2' }]}>
+              <Ionicons name="cafe-outline" size={14} color="#EF4444" />
+              <Text style={styles.tagText}>Coffee</Text>
+            </View>
+            <View style={[styles.tag, { borderColor: '#D1FAE5' }]}>
+              <Ionicons name="airplane-outline" size={14} color="#10B981" />
+              <Text style={styles.tagText}>Travel</Text>
+            </View>
+            <View style={[styles.tag, { borderColor: '#F3F4F6' }]}>
+              <Ionicons name="color-palette-outline" size={14} color="#6366F1" />
+              <Text style={styles.tagText}>Design</Text>
             </View>
           </View>
+        </View>
 
-          {/* Contact Info */}
-          <View style={styles.contactSection}>
-            {profile.email && (
-              <View style={styles.contactItem}>
-                <Text style={styles.contactIcon}>📧</Text>
-                <Text style={styles.contactText}>{profile.email}</Text>
+        {/* Privacy & Security */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Privacy & Security</Text>
+          <View style={styles.listCard}>
+            <TouchableOpacity style={styles.listItem}>
+              <View style={styles.listLeft}>
+                <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" />
+                <Text style={styles.listText}>Privacy Shortcut</Text>
               </View>
-            )}
-            {profile.contact && (
-              <View style={styles.contactItem}>
-                <Text style={styles.contactIcon}>📱</Text>
-                <Text style={styles.contactText}>{profile.contact}</Text>
-              </View>
-            )}
-            {profile.city && profile.country && (
-              <View style={styles.contactItem}>
-                <Text style={styles.contactIcon}>📍</Text>
-                <Text style={styles.contactText}>{profile.city}, {profile.country}</Text>
-              </View>
-            )}
-            {profile.date_of_birth && (
-              <View style={styles.contactItem}>
-                <Text style={styles.contactIcon}>🎂</Text>
-                <Text style={styles.contactText}>{new Date(profile.date_of_birth).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={styles.primaryButton}
-              onPress={openEditModal}
-            >
-              <Text style={styles.primaryButtonText}>✏️  Edit Profile</Text>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
             </TouchableOpacity>
+            
+            <View style={styles.listDivider} />
+            
+            <View style={styles.listItem}>
+              <View style={styles.listLeft}>
+                <Ionicons name="eye-off-outline" size={20} color="#9CA3AF" />
+                <Text style={styles.listText}>Incognito Mode</Text>
+              </View>
+              <Switch 
+                value={incognito} 
+                onValueChange={setIncognito}
+                trackColor={{ false: '#E5E7EB', true: '#5C7CFA' }}
+                thumbColor="#FFF"
+                style={{ transform: [{ scale: 0.9 }] }}
+              />
+            </View>
 
-            <TouchableOpacity 
-              style={[styles.secondaryButton, pendingCount > 0 && styles.secondaryButtonHighlight]}
-              onPress={() => router.push('/home/FriendRequestsScreen')}
-            >
-              <Text style={[styles.secondaryButtonText, pendingCount > 0 && styles.secondaryButtonTextHighlight]}>
-                {pendingCount > 0 ? `📬 ${pendingCount} Requests` : '📭 Requests'}
-              </Text>
+            <View style={styles.listDivider} />
+
+            <TouchableOpacity style={styles.listItem}>
+              <View style={styles.listLeft}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#9CA3AF" />
+                <Text style={styles.listText}>Account Security</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Quick Actions Grid */}
-        <View style={styles.quickActionsSection}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-          <View style={styles.actionsGrid}>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>📍</Text>
-              </View>
-              <Text style={styles.actionLabel}>Location</Text>
-              <Text style={styles.actionSubtext}>History</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>🔔</Text>
-              </View>
-              <Text style={styles.actionLabel}>Alerts</Text>
-              <Text style={styles.actionSubtext}>Manage</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>⚙️</Text>
-              </View>
-              <Text style={styles.actionLabel}>Settings</Text>
-              <Text style={styles.actionSubtext}>Configure</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>🛡️</Text>
-              </View>
-              <Text style={styles.actionLabel}>Privacy</Text>
-              <Text style={styles.actionSubtext}>Security</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Friends Section */}
-        {friendCount > 0 && (
-          <View style={styles.friendsSection}>
-            <View style={styles.friendsHeader}>
-              <Text style={styles.sectionTitle}>Friends</Text>
-              <TouchableOpacity onPress={() => router.push('/home/FriendsListScreen')}>
-                <Text style={styles.viewAllButton}>View All →</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.friendsScrollContent}
-            >
-              {friends.slice(0, 8).map((friend) => (
-                <View key={friend.id} style={styles.friendCard}>
-                  <View style={styles.friendAvatar}>
-                    <Text style={styles.friendAvatarText}>
-                      {friend.name.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={styles.friendName} numberOfLines={1}>
-                    {friend.name.split(' ')[0]}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* Edit Profile Modal */}
-      <Modal
-        visible={editModalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalContainer}
-        >
-          <View style={styles.modalHeader}>
-            <TouchableOpacity 
-              onPress={() => setEditModalVisible(false)}
-              style={styles.modalHeaderButton}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Edit Profile</Text>
-            <TouchableOpacity 
-              onPress={handleSaveProfile}
-              disabled={saving}
-              style={styles.modalHeaderButton}
-            >
-              <Text style={[styles.saveButtonText, saving && styles.saveButtonDisabled]}>
-                {saving ? 'Saving...' : 'Save'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>Basic Information</Text>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Full Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.name}
-                  onChangeText={(text) => setEditForm({...editForm, name: text})}
-                  placeholder="Enter your full name"
-                  placeholderTextColor="#999"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Username</Text>
-                {!canChangeUsername() && (
-                  <Text style={styles.warningText}>
-                    ⚠️ Username can be changed in {getDaysUntilUsernameChange()} days
-                  </Text>
-                )}
-                <TextInput
-                  style={[styles.input, !canChangeUsername() && styles.inputDisabled]}
-                  value={editForm.username}
-                  onChangeText={(text) => setEditForm({...editForm, username: text.toLowerCase()})}
-                  placeholder="Choose a unique username"
-                  placeholderTextColor="#999"
-                  autoCapitalize="none"
-                  editable={canChangeUsername()}
-                />
-                <Text style={styles.helperText}>Username can only be changed once every 30 days</Text>
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Bio</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={editForm.bio}
-                  onChangeText={(text) => setEditForm({...editForm, bio: text})}
-                  placeholder="Tell others about yourself..."
-                  placeholderTextColor="#999"
-                  multiline
-                  numberOfLines={4}
-                  maxLength={200}
-                />
-                <Text style={styles.helperText}>{editForm.bio.length}/200 characters</Text>
-              </View>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>Contact Details</Text>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Phone Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.contact}
-                  onChangeText={(text) => setEditForm({...editForm, contact: text})}
-                  placeholder="+1 (555) 000-0000"
-                  placeholderTextColor="#999"
-                  keyboardType="phone-pad"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Date of Birth</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.date_of_birth}
-                  onChangeText={(text) => setEditForm({...editForm, date_of_birth: text})}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#999"
-                />
-              </View>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>Location</Text>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>City</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.city}
-                  onChangeText={(text) => setEditForm({...editForm, city: text})}
-                  placeholder="Your city"
-                  placeholderTextColor="#999"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Country</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.country}
-                  onChangeText={(text) => setEditForm({...editForm, country: text})}
-                  placeholder="Your country"
-                  placeholderTextColor="#999"
-                />
-              </View>
-
-              <View style={styles.infoBox}>
-                <Text style={styles.infoIcon}>📍</Text>
-                <Text style={styles.infoText}>
-                  Your precise location will be automatically updated when you save
-                </Text>
-              </View>
-            </View>
-
-            <View style={{ height: 60 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: {
-    flex: 1,
-    backgroundColor: "#F8F9FA",
-  },
-  container: { 
-    flexGrow: 1,
-    paddingBottom: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  
-  // Profile Card
-  profileCard: {
-    backgroundColor: '#fff',
-    margin: 16,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  profileTop: {
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  avatarContainer: {
-    position: 'relative',
-  },
-  avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#0066FF',
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#0066FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
   },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  statusIndicator: {
+  scrollContent: { paddingHorizontal: 20 },
+  profileSection: { alignItems: 'center', marginTop: 10, marginBottom: 24 },
+  avatarWrap: { position: 'relative', marginBottom: 16 },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  editBadge: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#34C759',
-    borderWidth: 3,
-    borderColor: '#fff',
-  },
-  profileBasicInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  profileName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  profileUsername: {
-    fontSize: 15,
-    color: '#0066FF',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  badgeContainer: {
-    flexDirection: 'row',
-  },
-  badge: {
-    backgroundColor: '#F0F4FF',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    fontSize: 12,
-    color: '#0066FF',
-    fontWeight: '600',
-  },
-  bioSection: {
-    marginBottom: 20,
-    paddingHorizontal: 4,
-  },
-  bioText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4A4A4A',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#F0F0F0',
-    marginBottom: 20,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#E5E5EA',
-  },
-  contactSection: {
-    marginBottom: 20,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  contactIcon: {
-    fontSize: 18,
-    marginRight: 12,
-    width: 24,
-  },
-  contactText: {
-    fontSize: 15,
-    color: '#4A4A4A',
-    flex: 1,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: '#0066FF',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#0066FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: '#F0F0F0',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  secondaryButtonHighlight: {
-    backgroundColor: '#FFF3E0',
-    borderWidth: 1,
-    borderColor: '#FF9500',
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1A1A1A',
-  },
-  secondaryButtonTextHighlight: {
-    color: '#FF9500',
-  },
-
-  // Quick Actions
-  quickActionsSection: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  actionCard: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  actionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#F8F9FA',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#5C7CFA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  actionIcon: {
-    fontSize: 28,
-  },
-  actionLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 2,
-  },
-  actionSubtext: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
-
-  // Friends Section
-  friendsSection: {
-    paddingHorizontal: 16,
-  },
-  friendsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  viewAllButton: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0066FF',
-  },
-  friendsScrollContent: {
-    paddingRight: 16,
-  },
-  friendCard: {
-    alignItems: 'center',
-    marginRight: 16,
-    width: 80,
-  },
-  friendAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#0066FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
     borderWidth: 2,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: '#FFF',
   },
-  friendAvatarText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  friendName: {
-    fontSize: 13,
-    color: '#1A1A1A',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-
-  // Modal Styles
-  modalContainer: {
+  nameText: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  bioText: { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
+  actionRow: { flexDirection: 'row', gap: 12, marginBottom: 32 },
+  editBtn: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-  },
-  modalHeaderButton: {
-    minWidth: 60,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0066FF',
-  },
-  saveButtonDisabled: {
-    color: '#C7C7CC',
-  },
-  modalContent: {
-    flex: 1,
-  },
-  formSection: {
-    backgroundColor: '#fff',
-    marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  formSectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#5C7CFA',
     paddingVertical: 14,
-    fontSize: 16,
-    color: '#1A1A1A',
-    backgroundColor: '#F8F9FA',
+    borderRadius: 20,
   },
-  inputDisabled: {
-    backgroundColor: '#F0F0F0',
-    color: '#8E8E93',
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-    paddingTop: 14,
-  },
-  helperText: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginTop: 6,
-  },
-  warningText: {
-    fontSize: 12,
-    color: '#FF9500',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  infoBox: {
-    flexDirection: 'row',
-    backgroundColor: '#F0F4FF',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  infoIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  infoText: {
+  editBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  shareBtn: {
     flex: 1,
-    fontSize: 13,
-    color: '#0066FF',
-    lineHeight: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 14,
+    borderRadius: 20,
   },
+  shareBtnText: { color: '#374151', fontSize: 14, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, paddingHorizontal: 10 },
+  statBox: { alignItems: 'center' },
+  statNum: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  statLabel: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5 },
+  statDivider: { width: 1, height: 30, backgroundColor: '#F3F4F6' },
+  smartCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F6FF',
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 32,
+  },
+  smartIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#5C7CFA', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  smartTextWrap: { flex: 1 },
+  smartTitle: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 2 },
+  smartDesc: { fontSize: 12, color: '#6B7280' },
+  sectionContainer: { marginBottom: 32 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 },
+  addText: { fontSize: 13, fontWeight: '600', color: '#5C7CFA' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  tagText: { fontSize: 13, fontWeight: '600', color: '#374151' },
+  listCard: { backgroundColor: '#F9FAFB', borderRadius: 20, paddingHorizontal: 16 },
+  listItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16 },
+  listLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  listText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  listDivider: { height: 1, backgroundColor: '#F3F4F6' },
 });

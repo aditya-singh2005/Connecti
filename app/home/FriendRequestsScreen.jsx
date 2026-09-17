@@ -1,34 +1,40 @@
-import { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  TextInput,
-  ActivityIndicator
-} from "react-native";
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+    Alert,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from "react-native";
 import { useFriendships } from "../../hooks/useFriendships";
 
 export default function FriendRequestsScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('received'); // 'received', 'sent', or 'search'
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [activeTab, setActiveTab] = useState('received'); // 'received' or 'sent'
 
   const {
     pendingRequests,
     sentRequests,
     acceptFriendRequest,
-    removeFriendship,
+    declineInteraction,
+    cancelInteraction,
     pendingCount,
-    searchUsers,
-    sendFriendRequest
+    markInboxSeen,
+    refreshFriendships,
   } = useFriendships();
+
+  useFocusEffect(
+    useCallback(() => {
+      markInboxSeen();
+      refreshFriendships(false);
+    }, [markInboxSeen, refreshFriendships])
+  );
 
   const handleAcceptRequest = async (friendshipId, friendName) => {
     const success = await acceptFriendRequest(friendshipId);
@@ -46,7 +52,7 @@ export default function FriendRequestsScreen() {
         {
           text: "Reject",
           style: "destructive",
-          onPress: () => removeFriendship(friendshipId)
+          onPress: () => declineInteraction(friendshipId)
         }
       ]
     );
@@ -61,264 +67,152 @@ export default function FriendRequestsScreen() {
         {
           text: "Cancel Request",
           style: "destructive",
-          onPress: () => removeFriendship(friendshipId)
+          onPress: () => cancelInteraction(friendshipId)
         }
       ]
     );
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-
-    setIsSearching(true);
-    setHasSearched(true);
-    const results = await searchUsers(searchQuery);
-    setSearchResults(results);
-    setIsSearching(false);
-  };
-
-  const handleSendFriendRequest = async (friendId) => {
-    const success = await sendFriendRequest(friendId);
-    if (success) {
-      handleSearch(); // Refresh search results
-    }
-  };
-
-  const clearSearch = () => {
-    setSearchQuery("");
-    setSearchResults([]);
-    setHasSearched(false);
-  };
-
   return (
     <View style={styles.container}>
-      {/* Header */}
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.push('/home/ProfileScreen')}
+          onPress={() => router.back()}
           style={styles.backButton}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Friend Requests</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.headerTitle}>Inbox</Text>
+        <View style={{ width: 24 }} />
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'received' && styles.activeTab]}
-          onPress={() => setActiveTab('received')}
-        >
-          <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
-            Received
-          </Text>
-          {pendingCount > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{pendingCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
-          onPress={() => setActiveTab('sent')}
-        >
-          <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>
-            Sent
-          </Text>
-          {sentRequests.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{sentRequests.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'search' && styles.activeTab]}
-          onPress={() => setActiveTab('search')}
-        >
-          <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>
-            Search
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar - Only show on Search tab */}
-      {activeTab === 'search' && (
-        <View style={styles.searchSection}>
-          <View style={styles.searchContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by name or phone..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={handleSearch}
-              placeholderTextColor="#8e8e8e"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={clearSearch}>
-                <Text style={styles.clearIcon}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+      {/* Modern Tabs */}
+      <View style={styles.tabsWrapper}>
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'received' && styles.activeTab]}
+            onPress={() => setActiveTab('received')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
+              Received
+            </Text>
+            {pendingCount > 0 ? (
+              <View style={[styles.tabBadge, activeTab === 'received' && styles.activeTabBadge]}>
+                <Text style={[styles.tabBadgeText, activeTab === 'received' && styles.activeTabBadgeText]}>
+                  {pendingCount}
+                </Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={handleSearch}
-            style={[
-              styles.searchButton,
-              (!searchQuery.trim() || isSearching) && styles.searchButtonDisabled
-            ]}
-            disabled={!searchQuery.trim() || isSearching}
+            style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
+            onPress={() => setActiveTab('sent')}
+            activeOpacity={0.8}
           >
-            {isSearching ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.searchButtonText}>Search</Text>
-            )}
+            <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>
+              Sent
+            </Text>
+            {sentRequests.length > 0 ? (
+              <View style={[styles.tabBadge, activeTab === 'sent' && styles.activeTabBadge]}>
+                <Text style={[styles.tabBadgeText, activeTab === 'sent' && styles.activeTabBadgeText]}>
+                  {sentRequests.length}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
-      )}
+      </View>
 
       {/* Content */}
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {activeTab === 'received' ? (
-          // Received Requests
           pendingRequests.length > 0 ? (
-            pendingRequests.map(request => (
-              <View key={request.id} style={styles.requestItem}>
-                <View style={styles.requestLeft}>
-                  <View style={styles.requestAvatar}>
-                    <Text style={styles.requestAvatarText}>
-                      {request.name.charAt(0).toUpperCase()}
-                    </Text>
+            <View style={styles.listContainer}>
+              {pendingRequests.map(request => (
+                <View key={request.id} style={styles.requestCard}>
+                  <View style={styles.requestLeft}>
+                    <View style={styles.requestAvatar}>
+                      <Text style={styles.requestAvatarText}>
+                        {(request.name || request.username || 'C').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.requestInfo}>
+                      <Text style={styles.requestName}>{request.name}</Text>
+                      <Text style={styles.requestContact}>{request.contact}</Text>
+                    </View>
                   </View>
-                  <View style={styles.requestInfo}>
-                    <Text style={styles.requestName}>{request.name}</Text>
-                    <Text style={styles.requestContact}>{request.contact}</Text>
-                  </View>
-                </View>
 
-                <View style={styles.requestActions}>
-                  <TouchableOpacity
-                    onPress={() => handleAcceptRequest(request.id, request.name)}
-                    style={styles.acceptButton}
-                  >
-                    <Text style={styles.acceptButtonText}>Accept</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleRejectRequest(request.id, request.name)}
-                    style={styles.rejectButton}
-                  >
-                    <Text style={styles.rejectButtonText}>Delete</Text>
-                  </TouchableOpacity>
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      onPress={() => handleRejectRequest(request.id, request.name)}
+                      style={styles.iconButtonGhost}
+                    >
+                      <Ionicons name="close" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleAcceptRequest(request.id, request.name)}
+                      style={styles.iconButtonPrimary}
+                    >
+                      <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyText}>No friend requests</Text>
-              <Text style={styles.emptySubtext}>
-                When someone sends you a friend request, it will appear here
-              </Text>
+              ))}
             </View>
-          )
-        ) : activeTab === 'sent' ? (
-          // Sent Requests
-          sentRequests.length > 0 ? (
-            sentRequests.map(request => (
-              <View key={request.id} style={styles.requestItem}>
-                <View style={styles.requestLeft}>
-                  <View style={styles.requestAvatar}>
-                    <Text style={styles.requestAvatarText}>
-                      {request.name.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.requestInfo}>
-                    <Text style={styles.requestName}>{request.name}</Text>
-                    <Text style={styles.requestContact}>{request.contact}</Text>
-                    <Text style={styles.pendingLabel}>Pending...</Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  onPress={() => handleCancelRequest(request.id, request.name)}
-                  style={styles.cancelButton}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            ))
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📤</Text>
-              <Text style={styles.emptyText}>No sent requests</Text>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="mail-unread" size={32} color="#9CA3AF" />
+              </View>
+              <Text style={styles.emptyText}>All caught up!</Text>
               <Text style={styles.emptySubtext}>
-                Friend requests you send will appear here
+                You don&apos;t have any pending friend requests right now.
               </Text>
             </View>
           )
         ) : (
-          // Search Tab
-          isSearching ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator size="large" color="#1E88E5" />
-              <Text style={styles.loadingText}>Searching...</Text>
-            </View>
-          ) : searchResults.length > 0 ? (
-            <View style={styles.resultsList}>
-              <Text style={styles.resultsCount}>
-                {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'} found
-              </Text>
-              {searchResults.map(user => (
-                <View key={user.id} style={styles.requestItem}>
+          // Sent Requests
+          sentRequests.length > 0 ? (
+            <View style={styles.listContainer}>
+              {sentRequests.map(request => (
+                <View key={request.id} style={styles.requestCard}>
                   <View style={styles.requestLeft}>
                     <View style={styles.requestAvatar}>
                       <Text style={styles.requestAvatarText}>
-                        {user.name.charAt(0).toUpperCase()}
+                        {(request.name || request.username || 'C').charAt(0).toUpperCase()}
                       </Text>
                     </View>
                     <View style={styles.requestInfo}>
-                      <Text style={styles.requestName}>{user.name}</Text>
-                      <Text style={styles.requestContact}>{user.contact}</Text>
+                      <Text style={styles.requestName}>{request.name}</Text>
+                      <Text style={styles.requestContact}>{request.contact}</Text>
+                      <View style={styles.pendingStatusRow}>
+                        <View style={styles.pendingDot} />
+                        <Text style={styles.pendingStatusText}>Awaiting response</Text>
+                      </View>
                     </View>
                   </View>
 
-                  {user.is_friend ? (
-                    <View style={styles.friendBadgeContainer}>
-                      <Text style={styles.friendBadge}>✓ Friends</Text>
-                    </View>
-                  ) : user.friendship_status === 'pending' ? (
-                    <View style={styles.pendingBadgeContainer}>
-                      <Text style={styles.pendingBadgeText}>Pending</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => handleSendFriendRequest(user.id)}
-                      style={styles.addButton}
-                    >
-                      <Text style={styles.addButtonText}>Add</Text>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    onPress={() => handleCancelRequest(request.id, request.name)}
+                    style={styles.cancelBtn}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
-          ) : hasSearched ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🔍</Text>
-              <Text style={styles.emptyText}>No users found</Text>
-              <Text style={styles.emptySubtext}>
-                Try searching with a different name or phone number
-              </Text>
-            </View>
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>👥</Text>
-              <Text style={styles.emptyText}>Search for friends</Text>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="paper-plane" size={32} color="#9CA3AF" />
+              </View>
+              <Text style={styles.emptyText}>No sent requests</Text>
               <Text style={styles.emptySubtext}>
-                Enter a name or phone number to find and add friends
+                Friend requests you send will appear here until they are accepted.
               </Text>
             </View>
           )
@@ -331,150 +225,93 @@ export default function FriendRequestsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   backButton: {
     padding: 4,
-  },
-  backIcon: {
-    fontSize: 28,
-    color: '#262626',
+    marginLeft: -4,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#262626',
+    color: '#111827',
   },
-  placeholder: {
-    width: 36,
+  tabsWrapper: {
+    paddingHorizontal: 24,
+    marginBottom: 8,
   },
   tabsContainer: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 4,
   },
   tab: {
     flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#262626',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#8e8e8e',
+    color: '#6B7280',
   },
   activeTabText: {
-    color: '#262626',
+    color: '#111827',
   },
   tabBadge: {
-    backgroundColor: '#FF3B30',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#E5E7EB',
     paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  activeTabBadge: {
+    backgroundColor: '#EEF2FF',
   },
   tabBadgeText: {
-    color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
+    color: '#4B5563',
   },
-  searchSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fafafa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#dbdbdb',
-  },
-  searchIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: '#262626',
-  },
-  clearIcon: {
-    fontSize: 18,
-    color: '#8e8e8e',
-    padding: 4,
-  },
-  searchButton: {
-    backgroundColor: '#0095F6',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  searchButtonDisabled: {
-    backgroundColor: '#b2dffc',
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
+  activeTabBadgeText: {
+    color: '#5C7CFA',
   },
   content: {
     flex: 1,
   },
-  loadingState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
+  listContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#8e8e8e',
-  },
-  resultsList: {
-    paddingTop: 12,
-  },
-  resultsCount: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8e8e8e',
-  },
-  requestItem: {
+  requestCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
+    borderBottomColor: '#F9FAFB',
   },
   requestLeft: {
     flexDirection: 'row',
@@ -482,132 +319,112 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   requestAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#1E88E5',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   requestAvatarText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: '#6B7280',
   },
   requestInfo: {
     flex: 1,
   },
   requestName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
+    fontWeight: '700',
+    color: '#111827',
     marginBottom: 2,
   },
   requestContact: {
-    fontSize: 14,
-    color: '#8e8e8e',
+    fontSize: 13,
+    color: '#6B7280',
   },
-  pendingLabel: {
+  pendingStatusText: {
     fontSize: 12,
-    color: '#FF9500',
-    marginTop: 4,
-    fontStyle: 'italic',
+    fontWeight: '600',
+    color: '#F59E0B',
+    marginLeft: 6,
+  },
+  pendingStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  pendingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#F59E0B',
   },
   requestActions: {
-    flexDirection: 'column',
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  acceptButton: {
-    backgroundColor: '#0095F6',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 90,
+  iconButtonGhost: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  acceptButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  rejectButton: {
-    backgroundColor: '#efefef',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 90,
+  iconButtonPrimary: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#5C7CFA',
+    justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#5C7CFA',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  rejectButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#262626',
-  },
-  cancelButton: {
-    backgroundColor: '#efefef',
-    paddingHorizontal: 20,
+  cancelBtn: {
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 16,
   },
-  cancelButtonText: {
-    fontSize: 14,
+  cancelBtnText: {
+    color: '#EF4444',
+    fontSize: 13,
     fontWeight: '600',
-    color: '#262626',
-  },
-  addButton: {
-    backgroundColor: '#0095F6',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  friendBadgeContainer: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
-  },
-  friendBadge: {
-    color: '#4CAF50',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  pendingBadgeContainer: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
-  },
-  pendingBadgeText: {
-    color: '#FF9800',
-    fontWeight: '600',
-    fontSize: 14,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 120,
     paddingHorizontal: 40,
   },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#262626',
+    fontWeight: '700',
+    color: '#111827',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#8e8e8e',
+    color: '#6B7280',
     textAlign: 'center',
+    lineHeight: 20,
   },
 });

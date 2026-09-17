@@ -252,9 +252,14 @@ export default function NotificationHandler() {
 
             try {
               if (!partnerId && matchId && user?.id) {
-                const { data: matchData } = await supabase.from('wave_notification_logs').select('user1_id, user2_id').eq('id', matchId).single();
-                if (matchData) {
-                  partnerId = matchData.user1_id === user.id ? matchData.user2_id : matchData.user1_id;
+                // Query interactions table (replaces wave_notification_logs)
+                const { data: interaction } = await supabase
+                  .from('interactions')
+                  .select('sender_id, receiver_id')
+                  .eq('id', matchId)
+                  .maybeSingle();
+                if (interaction) {
+                  partnerId = interaction.sender_id === user.id ? interaction.receiver_id : interaction.sender_id;
                 }
               }
             } catch (err) {
@@ -277,35 +282,14 @@ export default function NotificationHandler() {
           const matchId = data?.matchId;
           if (user?.id && matchId) {
             try {
-              // Mark as skipped in DB
-              await supabase.from('wave_notification_logs').update({
-                skipped_by: user.id,
-                skipped_at: new Date().toISOString()
-              }).eq('id', matchId);
-
-              // Notify the other person immediately just like HintScreen
-              const { data: matchData } = await supabase.from('wave_notification_logs').select('user1_id, user2_id, user1_expo_push_token, user2_expo_push_token').eq('id', matchId).single();
-              if (matchData) {
-                const amIUser1 = matchData.user1_id === user.id;
-                const partnerToken = amIUser1 ? matchData.user2_expo_push_token : matchData.user1_expo_push_token;
-                
-                if (partnerToken && partnerToken.startsWith('ExponentPushToken')) {
-                  await fetch('https://exp.host/--/api/v2/push/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                    body: JSON.stringify({
-                      to: partnerToken,
-                      title: '🌫️ Moment Passed',
-                      body: 'The other person skipped this moment.',
-                      data: { type: 'skipped', matchId },
-                      sound: 'default',
-                      channelId: 'geofence-alerts'
-                    })
-                  });
-                }
-              }
+              // Mark interaction as ignored (replaces wave_notification_logs skip)
+              await supabase
+                .from('interactions')
+                .update({ status: 'ignored' })
+                .eq('id', matchId);
+              console.log('[NotifHandler] Interaction declined from notification');
             } catch (err) {
-              console.error('Failed to skip from notification:', err);
+              console.error('Failed to decline from notification:', err);
             }
           }
           await dismissAndCollapse();

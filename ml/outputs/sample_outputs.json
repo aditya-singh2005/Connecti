@@ -6,7 +6,7 @@
     "relationship": {
       "user_a": "u001",
       "user_b": "u003",
-      "relationship_score": 72,
+      "relationship_score": 74,
       "explanation": "Relationship based on: both attended Delhi Public School, R.K. Puram; both studied at Delhi Technological University; both work at Google India; 2 mutual friend(s); share interests in hiking, chess; share skills in Python, Machine Learning; met ~4 times before; very similar profiles.",
       "details": {
         "shared_school": true,
@@ -25,8 +25,8 @@
           "Machine Learning"
         ],
         "previous_meetups_avg": 4.5,
-        "days_since_last_meeting": 139,
-        "embedding_similarity": 0.7499,
+        "days_since_last_meeting": 170,
+        "embedding_similarity": 0.9547,
         "score_breakdown": {
           "shared_school": 10.0,
           "shared_college": 15.0,
@@ -47,10 +47,10 @@
           "skill_score": 3.33,
           "previous_meetups_avg": 4.5,
           "meetup_score": 9.0,
-          "days_since_last_meeting": 139,
-          "recency_score": 3.55,
-          "embedding_similarity": 0.7499,
-          "embedding_bonus": 7.5
+          "days_since_last_meeting": 170,
+          "recency_score": 3.13,
+          "embedding_similarity": 0.9547,
+          "embedding_bonus": 9.55
         }
       }
     },
@@ -230,16 +230,16 @@
     "reunion": {
       "user_a": "u001",
       "user_b": "u003",
-      "reunion_probability": 91,
+      "reunion_probability": 92,
       "explanation": "Strong shared history, high profile similarity, 2 mutual friend(s), shared college background, same workplace, frequent past meetups, shared interests in hiking, chess.",
       "recommendation": "Highly recommended to reconnect \u2014 you have a strong foundation.",
       "factors": {
-        "relationship_score": 72,
+        "relationship_score": 74,
         "mutual_friends": 2,
         "previous_meetups_avg": 4.5,
-        "profile_similarity": 0.7499,
-        "recency_factor": 0.709,
-        "weighted_sum": 0.5864
+        "profile_similarity": 0.9547,
+        "recency_factor": 0.627,
+        "weighted_sum": 0.6066
       }
     }
   },
@@ -266,8 +266,8 @@
           "React"
         ],
         "previous_meetups_avg": 4.5,
-        "days_since_last_meeting": 100,
-        "embedding_similarity": 0.7509,
+        "days_since_last_meeting": 131,
+        "embedding_similarity": 0.7889,
         "score_breakdown": {
           "shared_school": 0.0,
           "shared_college": 15.0,
@@ -286,10 +286,10 @@
           "skill_score": 1.43,
           "previous_meetups_avg": 4.5,
           "meetup_score": 9.0,
-          "days_since_last_meeting": 100,
-          "recency_score": 4.07,
-          "embedding_similarity": 0.7509,
-          "embedding_bonus": 7.51
+          "days_since_last_meeting": 131,
+          "recency_score": 3.65,
+          "embedding_similarity": 0.7889,
+          "embedding_bonus": 7.89
         }
       }
     },
@@ -426,9 +426,9 @@
         "relationship_score": 41,
         "mutual_friends": 1,
         "previous_meetups_avg": 4.5,
-        "profile_similarity": 0.7509,
-        "recency_factor": 0.813,
-        "weighted_sum": 0.4529
+        "profile_similarity": 0.7889,
+        "recency_factor": 0.731,
+        "weighted_sum": 0.4485
       }
     }
   },
@@ -439,7 +439,7 @@
     "relationship": {
       "user_a": "u004",
       "user_b": "u008",
-      "relationship_score": 18,
+      "relationship_score": 17,
       "explanation": "Relationship based on: share interests in travel, photography; share skills in Python; met ~1 times before; very similar profiles.",
       "details": {
         "shared_school": false,
@@ -454,8 +454,8 @@
           "Python"
         ],
         "previous_meetups_avg": 1.0,
-        "days_since_last_meeting": 358,
-        "embedding_similarity": 0.7554,
+        "days_since_last_meeting": 389,
+        "embedding_similarity": 0.7595,
         "score_breakdown": {
           "shared_school": 0.0,
           "shared_college": 0.0,
@@ -475,10 +475,10 @@
           "skill_score": 1.43,
           "previous_meetups_avg": 1.0,
           "meetup_score": 2.0,
-          "days_since_last_meeting": 358,
-          "recency_score": 1.56,
-          "embedding_similarity": 0.7554,
-          "embedding_bonus": 7.55
+          "days_since_last_meeting": 389,
+          "recency_score": 1.45,
+          "embedding_similarity": 0.7595,
+          "embedding_bonus": 7.59
         }
       }
     },
@@ -511,7 +511,7 @@
         {
           "level": 3,
           "category": "interests",
-          "hint": "You both enjoy creative pursuits."
+          "hint": "You both enjoy lifestyle interests."
         },
         {
           "level": 3,
@@ -543,16 +543,16 @@
     "reunion": {
       "user_a": "u004",
       "user_b": "u008",
-      "reunion_probability": 32,
+      "reunion_probability": 31,
       "explanation": "Limited shared history, high profile similarity, some past meetups, shared interests in travel, photography.",
       "recommendation": "Light connection \u2014 maybe a casual wave for now.",
       "factors": {
-        "relationship_score": 18,
+        "relationship_score": 17,
         "mutual_friends": 0,
         "previous_meetups_avg": 1.0,
-        "profile_similarity": 0.7554,
-        "recency_factor": 0.311,
-        "weighted_sum": 0.2037
+        "profile_similarity": 0.7595,
+        "recency_factor": 0.29,
+        "weighted_sum": 0.198
       }
     }
   }

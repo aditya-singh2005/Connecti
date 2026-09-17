@@ -1,22 +1,22 @@
 // FILE: app/home/_layout.js
-import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useSegments } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { TouchableOpacity, Alert, View, Text, StyleSheet } from 'react-native';
-import { useFriendships } from '../../hooks/useFriendships';
-import { useChatNotifications } from '../../hooks/useChatNotifications';
-import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { Tabs, useRouter, useSegments } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useChatNotifications } from '../../hooks/useChatNotifications';
+import { useFriendships } from '../../hooks/useFriendships';
+import { supabase } from '../../lib/supabase';
 
 export default function HomeLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const { pendingCount, friends } = useFriendships();
+  const { unseenCount, friends } = useFriendships();
   const { updateBadgeCount } = useChatNotifications();
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [userId, setUserId] = useState(null);
   const channelRef = useRef(null);
+  const lastUnreadErrorRef = useRef(null);
 
   useEffect(() => {
     getCurrentUser();
@@ -116,7 +116,6 @@ export default function HomeLayout() {
     if (!userId) return;
 
     try {
-      // Count total unread messages where current user is the receiver
       const { count, error } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
@@ -124,14 +123,25 @@ export default function HomeLayout() {
         .is('read_at', null);
 
       if (error) {
-        console.error('Error fetching unread count:', error);
+        // Only log the full error once per unique error message to avoid spamming
+        const errKey = `${error.code}:${error.message}`;
+        if (lastUnreadErrorRef.current !== errKey) {
+          lastUnreadErrorRef.current = errKey;
+          console.warn(
+            '[Chat] Error fetching unread count:',
+            '\n  code:', error.code,
+            '\n  message:', error.message,
+            '\n  details:', error.details,
+            '\n  hint:', error.hint
+          );
+        }
         return;
       }
 
-      console.log('Unread message count:', count);
+      lastUnreadErrorRef.current = null; // reset on success
       setUnreadChatCount(count || 0);
-    } catch (error) {
-      console.error('Error fetching unread count:', error);
+    } catch (err) {
+      console.warn('[Chat] Unexpected error in fetchUnreadCount:', err?.message || err);
     }
   };
 
@@ -176,11 +186,33 @@ export default function HomeLayout() {
       <Tabs.Screen
         name="HomeScreen"
         options={{
-          title: 'Home',
+          title: 'HOME',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+            <View style={styles.iconContainer}>
+              <Ionicons name="home-outline" size={size} color={color} />
+              {unseenCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unseenCount > 9 ? '9+' : unseenCount}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           ),
           headerTitle: 'Connecti - Home',
+          headerShown: false,
+        }}
+      />
+
+      {/* 🌊 Waves */}
+      <Tabs.Screen
+        name="WavesScreen"
+        options={{
+          title: 'WAVES',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="water-outline" size={size} color={color} />
+          ),
+          headerShown: false,
         }}
       />
 
@@ -188,32 +220,33 @@ export default function HomeLayout() {
       <Tabs.Screen
         name="SearchScreen"
         options={{
-          title: 'Search',
+          title: 'SEARCH',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="search-outline" size={size} color={color} />
           ),
-          headerTitle: 'Search Friends',
+          headerShown: false,
         }}
       />
 
-      {/* 💬 Chat with Badge */}
+      {/* 💬 Chat */}
       <Tabs.Screen
         name="ChatScreen"
         options={{
-          title: 'Chat',
+          title: 'CHAT',
           tabBarIcon: ({ color, size }) => (
             <View style={styles.iconContainer}>
-              <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
-              {unreadChatCount > 0 && (
+              <Ionicons name="chatbubble-outline" size={size} color={color} />
+              {unreadChatCount > 0 ? (
                 <View style={styles.chatBadge}>
                   <Text style={styles.chatBadgeText}>
                     {unreadChatCount > 99 ? '99+' : unreadChatCount}
                   </Text>
                 </View>
-              )}
+              ) : null}
             </View>
           ),
           headerTitle: 'Chat',
+          headerShown: false,
         }}
       />
 
@@ -221,20 +254,23 @@ export default function HomeLayout() {
       <Tabs.Screen
         name="ProfileScreen"
         options={{
-          title: 'Profile',
+          title: 'PROFILE',
           tabBarIcon: ({ color, size }) => (
-            <View style={styles.iconContainer}>
-              <Ionicons name="person-outline" size={size} color={color} />
-              {pendingCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </Text>
-                </View>
-              )}
-            </View>
+            <Ionicons name="person-outline" size={size} color={color} />
           ),
           headerTitle: 'My Profile',
+          headerShown: false,
+        }}
+      />
+
+      {/* ⚙️ Settings (Hidden from navbar, accessible from Profile) */}
+      <Tabs.Screen
+        name="SettingsScreen"
+        options={{
+          href: null,
+          title: 'SETTINGS',
+          headerTitle: 'Settings',
+          headerShown: false,
         }}
       />
 

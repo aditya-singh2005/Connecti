@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { sendGeofenceTrigger } from './api';
 import { WaveService } from './WaveService';
+import NativeGeofenceService from './NativeGeofenceService';
 
 // ⚠️ CRITICAL: Set the handler globally so it handles notifications even when app is in background/foreground
 Notifications.setNotificationHandler({
@@ -206,11 +207,10 @@ export async function refreshGeofencesAtLocation(location, executionState = 'bac
     }));
 
     // 3. Register with OS (Native preferred)
-    const nativeModule = require('./NativeGeofenceService').default;
-    const nativeAvailable = await nativeModule.isAvailable();
+    const nativeAvailable = await NativeGeofenceService.isAvailable();
 
     if (nativeAvailable && Platform.OS === 'android') {
-      await nativeModule.registerGeofences(geofences);
+      await NativeGeofenceService.registerGeofences(geofences);
       console.log(`[REFRESH:${stateLabel}] ✅ Updated ${geofences.length} native geofences`);
     } else {
       await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, geofences);
@@ -333,7 +333,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
             // Refresh native 30-min timer
             await NativeGeofenceService.setIsWaved(true, 30 * 60 * 1000);
           }
-        } catch (_e) { }
+        } catch (_e) { /* silent */ }
         return;
       }
 
@@ -389,7 +389,13 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
       if (lastNotifiedTime && nowMs - parseInt(lastNotifiedTime) < 10000) {
         console.log(`[BG] 🛡️ Cluster entry detected (simultaneous), skipping hopping count for ${zoneName}.`);
       } else {
-        await nativeModule.trackZoneEntry();
+        // trackZoneEntry is optional — only call if method exists on native module
+        try {
+          const nativeMod = NativeGeofenceService;
+          if (nativeMod && typeof nativeMod.trackZoneEntry === 'function') {
+            await nativeMod.trackZoneEntry();
+          }
+        } catch (_te) { /* optional method, safe to skip */ }
       }
 
       await AsyncStorage.setItem('last_notified_timestamp', nowMs.toString());

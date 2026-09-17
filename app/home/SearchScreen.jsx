@@ -1,63 +1,255 @@
-import { useState } from "react";
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Platform,
   ScrollView,
-  TouchableOpacity,
+  StatusBar,
+  StyleSheet,
+  Text,
   TextInput,
-  ActivityIndicator
+  TouchableOpacity,
+  View
 } from "react-native";
 import { useFriendships } from "../../hooks/useFriendships";
+
+// ── Memoized user card: only re-renders when its own props change ─────────────
+const UserCard = memo(function UserCard({
+  user,
+  isFriend,
+  friendshipStatus,
+  interactionId,
+  onSend,
+  onAccept,
+  onReject,
+  onCancel,
+}) {
+  const [isSending, setIsSending] = useState(false);
+  const [isResponding, setIsResponding] = useState(false);
+  const [pendingOverride, setPendingOverride] = useState(null);
+
+  const handlePress = useCallback(async () => {
+    if (isSending) return;
+    setPendingOverride(true);
+    setIsSending(true);
+    const ok = await onSend(user.id);
+    setIsSending(false);
+    if (!ok) setPendingOverride(false);
+    return ok;
+  }, [isSending, onSend, user.id]);
+
+  const handleResponse = useCallback(async (respond) => {
+    if (isResponding || !interactionId) return;
+    setIsResponding(true);
+    await respond(interactionId);
+    setIsResponding(false);
+  }, [interactionId, isResponding]);
+
+  const handleCancel = useCallback(async () => {
+    if (isResponding || !interactionId) return;
+    setPendingOverride(false);
+    setIsResponding(true);
+    const ok = await onCancel(interactionId);
+    setIsResponding(false);
+    if (!ok) setPendingOverride(true);
+  }, [interactionId, isResponding, onCancel]);
+
+  const isOutgoingPending = pendingOverride ?? friendshipStatus === 'outgoing_pending';
+
+  return (
+    <View style={styles.userCard}>
+      <View style={styles.userLeft}>
+        <View style={styles.userAvatar}>
+          <Text style={styles.userAvatarText}>
+            {(user.name || user.username || 'C').charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{user.name || user.username || 'Connecti user'}</Text>
+          {!!user.contact && <Text style={styles.userContact}>{user.contact}</Text>}
+        </View>
+      </View>
+
+      {isFriend ? (
+        <View style={styles.friendBadgeContainer}>
+          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+          <Text style={styles.friendBadge}>Friends</Text>
+        </View>
+      ) : friendshipStatus === 'incoming_pending' ? (
+        <View style={styles.requestActions}>
+          <TouchableOpacity
+            onPress={() => handleResponse(onReject)}
+            style={styles.iconButtonGhost}
+            disabled={isResponding}
+          >
+            <Ionicons name="close" size={20} color="#6B7280" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleResponse(onAccept)}
+            style={styles.iconButtonPrimary}
+            disabled={isResponding}
+          >
+            <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      ) : isOutgoingPending ? (
+        <TouchableOpacity
+          onPress={handleCancel}
+          style={styles.pendingBadgeContainer}
+          disabled={isResponding}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="time" size={16} color="#F59E0B" />
+          <Text style={styles.pendingBadgeText}>Pending</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          onPress={handlePress}
+          style={[styles.addButton, isSending && styles.addButtonDisabled]}
+          disabled={isSending}
+          activeOpacity={0.8}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="person-add" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.addButtonText}>Add</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
 
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const searchQueryRef = useRef("");
+  const searchRequestRef = useRef(0);
 
-  const { searchUsers, sendFriendRequest } = useFriendships();
+  const {
+    searchUsers,
+    sendInteraction,
+    pendingInteractions,
+    sentInteractions,
+    friends,
+    acceptInteraction,
+    declineInteraction,
+    cancelInteraction,
+  } = useFriendships();
+  const relationshipByUserId = useMemo(() => {
+    const relationships = new Map();
+    sentInteractions.forEach(interaction => {
+      relationships.set(interaction.receiverId, {
+        status: 'outgoing_pending',
+        interactionId: interaction.id,
+      });
+    });
+    pendingInteractions.forEach(interaction => {
+      relationships.set(interaction.senderId, {
+        status: 'incoming_pending',
+        interactionId: interaction.id,
+      });
+    });
+    return relationships;
+  }, [pendingInteractions, sentInteractions]);
+  const friendIds = useMemo(() => new Set(friends.map(friend => friend.id)), [friends]);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+  const runSearch = useCallback(async (query, markAsSearched = true) => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return;
 
+    const requestId = ++searchRequestRef.current;
     setIsSearching(true);
-    setHasSearched(true);
-    const results = await searchUsers(searchQuery);
+    setSearchError("");
+    if (markAsSearched) setHasSearched(true);
+
+    let results;
+    try {
+      results = await searchUsers(normalizedQuery);
+    } catch (error) {
+      console.error("Unable to search users:", error);
+      if (requestId === searchRequestRef.current) {
+        setSearchResults([]);
+        setSearchError("Unable to search right now. Please try again.");
+        setIsSearching(false);
+      }
+      return;
+    }
+
+    // Ignore responses from an older query or a request started before clearing.
+    if (requestId !== searchRequestRef.current || searchQueryRef.current.trim() !== normalizedQuery) {
+      return;
+    }
+
     setSearchResults(results);
     setIsSearching(false);
-  };
+  }, [searchUsers]);
 
-  const handleSendFriendRequest = async (friendId) => {
-    const success = await sendFriendRequest(friendId);
-    if (success) {
-      handleSearch(); // Refresh results
-    }
-  };
+  const handleSearch = () => runSearch(searchQueryRef.current);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (searchQueryRef.current.trim()) {
+        runSearch(searchQueryRef.current, false);
+      }
+    }, [runSearch])
+  );
+
+  // Stable reference so UserCard's useCallback dep doesn't change
+  const sendRef = useRef(sendInteraction);
+  sendRef.current = sendInteraction;
+  const stableSend = useCallback((id) => sendRef.current(id, 'wave'), []);
 
   const clearSearch = () => {
+    searchQueryRef.current = "";
+    searchRequestRef.current += 1;
     setSearchQuery("");
     setSearchResults([]);
     setHasSearched(false);
+    setSearchError("");
+    setIsSearching(false);
+  };
+
+  const handleQueryChange = (value) => {
+    searchQueryRef.current = value;
+    searchRequestRef.current += 1;
+    setIsSearching(false);
+    setSearchQuery(value);
   };
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Find Friends</Text>
+        <Text style={styles.headerSubtitle}>Connect with people you know</Text>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by name or phone..."
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleQueryChange}
             onSubmitEditing={handleSearch}
-            placeholderTextColor="#8e8e8e"
+            placeholderTextColor="#9CA3AF"
+            returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={clearSearch}>
-              <Text style={styles.clearIcon}>✕</Text>
+            <TouchableOpacity onPress={clearSearch} style={styles.clearBtn}>
+              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
             </TouchableOpacity>
           )}
         </View>
@@ -79,53 +271,44 @@ export default function SearchScreen() {
       </View>
 
       {/* Results */}
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {isSearching ? (
           <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color="#1E88E5" />
+            <ActivityIndicator size="large" color="#5C7CFA" />
             <Text style={styles.loadingText}>Searching...</Text>
           </View>
         ) : searchResults.length > 0 ? (
           <View style={styles.resultsList}>
             <Text style={styles.resultsCount}>
-              {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'} found
+              {searchResults.length} {searchResults.length === 1 ? 'Result' : 'Results'}
             </Text>
             {searchResults.map(user => (
-              <View key={user.id} style={styles.userItem}>
-                <View style={styles.userLeft}>
-                  <View style={styles.userAvatar}>
-                    <Text style={styles.userAvatarText}>
-                      {user.name.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{user.name}</Text>
-                    <Text style={styles.userContact}>{user.contact}</Text>
-                  </View>
-                </View>
-
-                {user.is_friend ? (
-                  <View style={styles.friendBadgeContainer}>
-                    <Text style={styles.friendBadge}>✓ Friends</Text>
-                  </View>
-                ) : user.friendship_status === 'pending' ? (
-                  <View style={styles.pendingBadgeContainer}>
-                    <Text style={styles.pendingBadgeText}>Pending</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => handleSendFriendRequest(user.id)}
-                    style={styles.addButton}
-                  >
-                    <Text style={styles.addButtonText}>Add</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              <UserCard
+                key={user.id}
+                user={user}
+                isFriend={user.is_friend || friendIds.has(user.id)}
+                friendshipStatus={relationshipByUserId.get(user.id)?.status || null}
+                interactionId={relationshipByUserId.get(user.id)?.interactionId || null}
+                onSend={stableSend}
+                onAccept={acceptInteraction}
+                onReject={declineInteraction}
+                onCancel={cancelInteraction}
+              />
             ))}
+          </View>
+        ) : searchError ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="alert-circle" size={32} color="#EF4444" />
+            </View>
+            <Text style={styles.emptyText}>Search unavailable</Text>
+            <Text style={styles.emptySubtext}>{searchError}</Text>
           </View>
         ) : hasSearched ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🔍</Text>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="search" size={32} color="#9CA3AF" />
+            </View>
             <Text style={styles.emptyText}>No users found</Text>
             <Text style={styles.emptySubtext}>
               Try searching with a different name or phone number
@@ -133,10 +316,12 @@ export default function SearchScreen() {
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>👥</Text>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="people" size={32} color="#5C7CFA" />
+            </View>
             <Text style={styles.emptyText}>Search for friends</Text>
             <Text style={styles.emptySubtext}>
-              Enter a name or phone number to find and add friends
+              Enter a name or phone number to find and add friends to your network
             </Text>
           </View>
         )}
@@ -148,54 +333,72 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   searchSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fafafa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
+    paddingHorizontal: 24,
+    marginBottom: 16,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#dbdbdb',
+    borderColor: '#F3F4F6',
+    height: 48,
   },
   searchIcon: {
-    fontSize: 18,
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: '#262626',
+    fontSize: 15,
+    color: '#111827',
+    height: '100%',
   },
-  clearIcon: {
-    fontSize: 18,
-    color: '#8e8e8e',
+  clearBtn: {
     padding: 4,
   },
   searchButton: {
-    backgroundColor: '#0095F6',
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: '#5C7CFA',
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    height: 48,
+    shadowColor: '#5C7CFA',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchButtonDisabled: {
-    backgroundColor: '#b2dffc',
+    backgroundColor: '#C7D2FE',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   searchButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontWeight: '700',
     fontSize: 16,
   },
   content: {
@@ -204,31 +407,33 @@ const styles = StyleSheet.create({
   loadingState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#8e8e8e',
+    marginTop: 16,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#6B7280',
   },
   resultsList: {
-    paddingTop: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   resultsCount: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8e8e8e',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 16,
   },
-  userItem: {
+  userCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#efefef',
+    borderBottomColor: '#F3F4F6',
   },
   userLeft: {
     flexDirection: 'row',
@@ -236,85 +441,130 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#1E88E5',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#EEF2FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   userAvatarText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: '#5C7CFA',
   },
   userInfo: {
     flex: 1,
   },
   userName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: 2,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
   },
   userContact: {
-    fontSize: 14,
-    color: '#8e8e8e',
+    fontSize: 13,
+    color: '#6B7280',
   },
   addButton: {
-    backgroundColor: '#0095F6',
-    paddingHorizontal: 20,
+    flexDirection: 'row',
+    backgroundColor: '#5C7CFA',
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    shadowColor: '#5C7CFA',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   addButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 14,
+  },
+  addButtonDisabled: {
+    backgroundColor: '#A5B4FC',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   friendBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 20,
   },
   friendBadge: {
-    color: '#4CAF50',
+    color: '#10B981',
     fontWeight: '600',
     fontSize: 14,
+    marginLeft: 4,
   },
   pendingBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 20,
   },
   pendingBadgeText: {
-    color: '#FF9800',
+    color: '#D97706',
     fontWeight: '600',
     fontSize: 14,
+    marginLeft: 4,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButtonGhost: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  iconButtonPrimary: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#5C7CFA',
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 100,
     paddingHorizontal: 40,
   },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#262626',
+    fontWeight: '700',
+    color: '#111827',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#8e8e8e',
+    color: '#6B7280',
     textAlign: 'center',
+    lineHeight: 20,
   },
 });
