@@ -2,10 +2,12 @@
 // Replaces useFriendships - now uses the new `connections` and `interactions` tables
 // from the restructured Supabase schema.
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 import { useAuth } from '../context/AuthProvider';
 import { supabase } from '../lib/supabase';
+import { sendPushNotification } from '../services/api';
 
 const ConnectionsContext = createContext(null);
 
@@ -17,14 +19,17 @@ function useConnectionsState() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState(null);
   const currentUserIdRef = useRef(null);
+  const optimisticConnectionsRef = useRef(new Map());
+  const relationshipEventsChannelRef = useRef(null);
   // Tracks last time user opened the Inbox — used to compute unseenCount
   const [lastInboxVisit, setLastInboxVisit] = useState(0);
   const lastInboxVisitRef = useRef(0);
   const lastInboxVisitKeyRef = useRef(null);
+  const [unseenNotificationCount, setUnseenNotificationCount] = useState(0);
 
   /**
    * Fetch all connections (mutual matches) and pending interactions.
-   * `connections` table: user1_id, user2_id, zone_id
+  * `friendships` table: user1_id, user2_id
    * `interactions` table: sender_id, receiver_id, interaction_type, status, zone_id
    */
   const fetchConnections = useCallback(async (showLoading = true) => {
@@ -48,8 +53,8 @@ function useConnectionsState() {
 
       // ── Fetch accepted connections (mutual matches) ───────────────────────
       const { data: connectionsData, error: connError } = await supabase
-        .from('connections')
-        .select('id, user1_id, user2_id, zone_id, created_at')
+        .from('friendships')
+        .select('id, user1_id, user2_id, created_at')
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
 
       if (connError) {
@@ -80,7 +85,6 @@ function useConnectionsState() {
             username: profile?.username || '',
             city: profile?.city || '',
             country: profile?.country || '',
-            zoneId: c.zone_id,
             connectedAt: c.created_at,
           };
         }).filter(c => c.id); // remove any that had no profile
@@ -150,7 +154,16 @@ function useConnectionsState() {
         });
       }
 
-      setConnections(formattedConnections);
+      const reconciledConnections = [...formattedConnections];
+      optimisticConnectionsRef.current.forEach((connection, partnerId) => {
+        if (!reconciledConnections.some(existing => existing.id === partnerId)) {
+          reconciledConnections.push(connection);
+        } else {
+          optimisticConnectionsRef.current.delete(partnerId);
+        }
+      });
+
+      setConnections(reconciledConnections);
       setPendingInteractions(formattedPending);
       setSentInteractions(formattedSent);
 
@@ -161,14 +174,69 @@ function useConnectionsState() {
     }
   }, []);
 
+  const applyAcceptedConnection = useCallback((row) => {
+    const userId = currentUserIdRef.current;
+    if (!userId || (row.sender_id !== userId && row.receiver_id !== userId)) return;
+
+    const partnerId = row.sender_id === userId ? row.receiver_id : row.sender_id;
+    const optimisticConnection = {
+      id: partnerId,
+      connectionId: `interaction-${row.id}`,
+      name: 'Connecti user',
+      contact: '',
+      username: '',
+      city: '',
+      country: '',
+      zoneId: row.zone_id,
+      connectedAt: row.updated_at || new Date().toISOString(),
+    };
+    optimisticConnectionsRef.current.set(partnerId, optimisticConnection);
+    setConnections(prev => prev.some(connection => connection.id === partnerId)
+      ? prev
+      : [optimisticConnection, ...prev]
+    );
+  }, []);
+
   // ── Setup realtime subscriptions ─────────────────────────────────────────
   // Optimistic local mutations — badges update in <50ms, no full re-fetches.
   useEffect(() => {
     let channel;
+    let notificationSubscription;
+    let cancelled = false;
+    let reconnectTimer = null;
+    let reconnectAttempt = 0;
+    let databaseStatus = 'CLOSED';
 
-    const setup = async () => {
+    const removeRealtimeChannels = () => {
+      if (channel) supabase.removeChannel(channel);
+      channel = null;
+      relationshipEventsChannelRef.current = null;
+      databaseStatus = 'CLOSED';
+    };
+
+    let setup;
+
+    const scheduleReconnect = (status) => {
+      if (cancelled || !user?.id || reconnectTimer || databaseStatus === 'SUBSCRIBED') return;
+
+      const delay = Math.min(30000, 1000 * (2 ** Math.min(reconnectAttempt, 5)));
+      reconnectAttempt += 1;
+      console.warn(`[Connections] Realtime ${status}; retrying in ${delay}ms`);
+
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (cancelled) return;
+        removeRealtimeChannels();
+        setup();
+      }, delay);
+    };
+
+    setup = async () => {
+      console.log('[Connections] Provider setup', user?.id || 'signed out');
       if (!user?.id) {
         setConnections([]);
+        optimisticConnectionsRef.current.clear();
+        relationshipEventsChannelRef.current = null;
         setPendingInteractions([]);
         setSentInteractions([]);
         setCurrentUserId(null);
@@ -180,13 +248,28 @@ function useConnectionsState() {
         return;
       }
 
-      await fetchConnections();
+      if (cancelled) return;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      currentUserIdRef.current = user.id;
+      setCurrentUserId(user.id);
 
+      if (!notificationSubscription) {
+        notificationSubscription = Notifications.addNotificationReceivedListener((notification) => {
+          const type = String(notification.request.content.data?.type || '').toUpperCase();
+          if (type === 'FRIEND_REQUEST') {
+            setUnseenNotificationCount(previousCount => previousCount + 1);
+            fetchConnections(false);
+          }
+        });
+      }
+
+      console.log('[Connections] Opening realtime channel for', user.id);
       channel = supabase
-        .channel(`connections-rt-${user.id}`)
+        .channel(`friendships-rt-${user.id}`)
+        .on('broadcast', { event: 'friend_accepted' }, ({ payload }) => {
+          applyAcceptedConnection(payload);
+          fetchConnections(false);
+        })
 
         // NEW incoming request → instantly bump pendingInteractions
         .on('postgres_changes', {
@@ -220,11 +303,18 @@ function useConnectionsState() {
           table: 'interactions',
         }, (payload) => {
           const row = payload.new;
-          if (row.receiver_id === user.id && row.status !== 'pending')
+          if (row.receiver_id === user.id && row.status !== 'pending') {
             setPendingInteractions(prev => prev.filter(p => p.id !== row.id));
-          if (row.sender_id === user.id && row.status !== 'pending')
+          }
+          if (row.sender_id === user.id && row.status !== 'pending') {
             setSentInteractions(prev => prev.filter(s => s.id !== row.id));
-          if (row.status === 'accepted') fetchConnections(false);
+          }
+          if (row.status === 'accepted' && (row.sender_id === user.id || row.receiver_id === user.id)) {
+            applyAcceptedConnection(row);
+          }
+          if (row.status !== 'pending') {
+            fetchConnections(false);
+          }
         })
 
         // Interaction deleted (cancel) → remove
@@ -234,15 +324,20 @@ function useConnectionsState() {
           table: 'interactions',
         }, (payload) => {
           const row = payload.old;
-          setPendingInteractions(prev => prev.filter(p => p.id !== row.id));
-          setSentInteractions(prev => prev.filter(s => s.id !== row.id));
+          if (row?.id) {
+            setPendingInteractions(prev => prev.filter(p => p.id !== row.id));
+            setSentInteractions(prev => prev.filter(s => s.id !== row.id));
+          }
+          // Reconcile from the server as well. This handles DELETE payloads
+          // arriving without the old row under restrictive realtime policies.
+          fetchConnections(false);
         })
 
         // New connection inserted → prepend
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
-          table: 'connections',
+          table: 'friendships',
         }, async (payload) => {
           const row = payload.new;
           if (row.user1_id !== user.id && row.user2_id !== user.id) return;
@@ -257,38 +352,66 @@ function useConnectionsState() {
             username: profile?.username || '',
             city: profile?.city || '',
             country: profile?.country || '',
-            zoneId: row.zone_id, connectedAt: row.created_at,
+            connectedAt: row.created_at,
           };
-          setConnections(prev =>
-            prev.some(c => c.connectionId === row.id) ? prev : [conn, ...prev]
-          );
+          optimisticConnectionsRef.current.delete(partnerId);
+          setConnections(prev => {
+            const existingIndex = prev.findIndex(c => c.connectionId === row.id || c.id === partnerId);
+            if (existingIndex === -1) return [conn, ...prev];
+            return prev.map((existing, index) => index === existingIndex ? conn : existing);
+          });
         })
 
         // Connection removed → filter out
         .on('postgres_changes', {
           event: 'DELETE',
           schema: 'public',
-          table: 'connections',
+          table: 'friendships',
         }, (payload) => {
           const row = payload.old;
           if (row.user1_id !== user.id && row.user2_id !== user.id) return;
-          setConnections(prev => prev.filter(c => c.connectionId !== row.id));
+          const partnerId = row.user1_id === user.id ? row.user2_id : row.user1_id;
+          optimisticConnectionsRef.current.delete(partnerId);
+          setConnections(prev => prev.filter(c => c.connectionId !== row.id && c.id !== partnerId));
         })
 
-        .subscribe();
+        .subscribe((status) => {
+          databaseStatus = status;
+          console.log(`[Connections] Database events: ${status}`);
+          if (status === 'SUBSCRIBED') reconnectAttempt = 0;
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            scheduleReconnect(status);
+          }
+        });
+      relationshipEventsChannelRef.current = channel;
+
+      if (!cancelled) await fetchConnections();
     };
 
     setup();
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') fetchConnections(false);
+      if (nextState !== 'active') return;
+
+      fetchConnections(false);
+
+      if (
+        user?.id &&
+        !cancelled &&
+        databaseStatus !== 'SUBSCRIBED'
+      ) {
+        scheduleReconnect('RESUME');
+      }
     });
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      removeRealtimeChannels();
+      notificationSubscription?.remove();
       appStateSub.remove();
     };
-  }, [fetchConnections, user?.id]);
+  }, [applyAcceptedConnection, fetchConnections, user?.id]);
 
   // ── Accept an incoming interaction → creates a connection ────────────────
   const acceptInteraction = async (interactionId) => {
@@ -314,17 +437,27 @@ function useConnectionsState() {
 
       // 3. Attempt to manually create connection (fails silently if already exists via trigger)
       const { error: connError } = await supabase
-        .from('connections')
+        .from('friendships')
         .insert({
           user1_id: interaction.sender_id,
-          user2_id: interaction.receiver_id,
-          zone_id: interaction.zone_id
+          user2_id: interaction.receiver_id
         });
         
       if (connError && connError.code !== '23505') {
          // ignore unique constraint violation (23505)
          console.warn('Manual connection insert error:', connError);
       }
+
+      await relationshipEventsChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'friend_accepted',
+        payload: {
+          id: interaction.id,
+          sender_id: interaction.sender_id,
+          receiver_id: interaction.receiver_id,
+          updated_at: new Date().toISOString(),
+        },
+      });
 
       await fetchConnections(false);
       return true;
@@ -388,9 +521,12 @@ function useConnectionsState() {
     }
   };
 
-  // ── Send a wave/hint interaction ──────────────────────────────────────────
+  // ── Send a friend request ─────────────────────────────────────────────────
   const sendInteraction = async (receiverId, interactionType = 'wave', zoneId = null) => {
     try {
+      const normalizedInteractionType = interactionType === 'friend_request'
+        ? 'wave'
+        : interactionType;
       const { data: { user: authenticatedUser }, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
 
@@ -413,7 +549,7 @@ function useConnectionsState() {
         .maybeSingle();
 
       if (existing) {
-        Alert.alert('Info', 'You already sent a wave to this person!');
+        Alert.alert('Info', 'You already sent a friend request to this person.');
         return false;
       }
 
@@ -423,7 +559,7 @@ function useConnectionsState() {
         .insert({
           sender_id: uid,
           receiver_id: receiverId,
-          interaction_type: interactionType,
+          interaction_type: normalizedInteractionType,
           zone_id: zoneId || null,
           status: 'pending',
         })
@@ -434,8 +570,14 @@ function useConnectionsState() {
 
       const { data: receiverProfile, error: receiverProfileError } = await supabase
         .from('profiles')
-        .select('name, contact, username')
+        .select('name, contact, username, fcm_token, expo_push_token')
         .eq('id', receiverId)
+        .maybeSingle();
+
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('name, username')
+        .eq('id', uid)
         .maybeSingle();
 
       if (receiverProfileError) {
@@ -450,11 +592,29 @@ function useConnectionsState() {
             name: receiverProfile?.name || receiverProfile?.username || 'Connecti user',
             contact: receiverProfile?.contact || '',
             username: receiverProfile?.username || '',
-            interactionType,
+            interactionType: normalizedInteractionType,
             zoneId: newRow.zone_id,
             createdAt: newRow.created_at,
           }, ...prev]
         );
+
+        const senderName = senderProfile?.name || senderProfile?.username || authenticatedUser.user_metadata?.first_name || authenticatedUser.user_metadata?.name || 'Someone';
+        const receiverToken = receiverProfile?.fcm_token || receiverProfile?.expo_push_token;
+        if (receiverToken) {
+          sendPushNotification({
+            token: receiverToken,
+            title: interactionType === 'hint' ? 'You received a private hint' : 'New friend request',
+            body: `${senderName} wants to be your friend. Accept or decline in your inbox.`,
+            data: {
+              type: interactionType === 'hint' ? 'WAVE_HINT' : 'FRIEND_REQUEST',
+              categoryId: interactionType === 'hint' ? 'MATCH_HINT' : 'FRIEND_REQUEST',
+              interactionId: newRow.id,
+              senderName,
+            },
+          }).catch(notificationError => {
+            console.warn('[Connections] Could not notify receiver:', notificationError.message);
+          });
+        }
       }
 
       return true;
@@ -469,7 +629,7 @@ function useConnectionsState() {
   const removeConnection = async (connectionId) => {
     try {
       const { error } = await supabase
-        .from('connections')
+        .from('friendships')
         .delete()
         .eq('id', connectionId);
 
@@ -554,7 +714,7 @@ function useConnectionsState() {
         [...uniqueUsers.values()].slice(0, 20).map(async (u) => {
           // Check if already connected
           const { data: conn } = await supabase
-            .from('connections')
+            .from('friendships')
             .select('id')
             .or(`and(user1_id.eq.${userId},user2_id.eq.${u.id}),and(user1_id.eq.${u.id},user2_id.eq.${userId})`)
             .maybeSingle();
@@ -593,8 +753,11 @@ function useConnectionsState() {
 
   // unseenCount: requests arrived AFTER the last inbox visit
   const unseenCount = useMemo(() =>
-    pendingInteractions.filter(p => new Date(p.createdAt).getTime() > lastInboxVisit).length,
-    [pendingInteractions, lastInboxVisit]
+    Math.max(
+      pendingInteractions.filter(p => new Date(p.createdAt).getTime() > lastInboxVisit).length,
+      unseenNotificationCount
+    ),
+    [pendingInteractions, lastInboxVisit, unseenNotificationCount]
   );
 
   // Call this when the user opens the Inbox — instantly clears badges
@@ -605,6 +768,7 @@ function useConnectionsState() {
     const now = Date.now();
     lastInboxVisitRef.current = now;
     setLastInboxVisit(now);
+    setUnseenNotificationCount(0);
     await AsyncStorage.setItem(`inbox_last_visit_${userId}`, String(now));
   }, []);
 

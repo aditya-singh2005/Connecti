@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthProvider';
 import { useFriendships } from '../../hooks/useFriendships';
@@ -11,18 +11,31 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const { friendCount } = useFriendships();
+  const { friendCount, refresh } = useFriendships();
 
   const [profile, setProfile] = useState(null);
   const [smartReconnect, setSmartReconnect] = useState(true);
   const [incognito, setIncognito] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadProfile = useCallback(async () => {
+    if (!user?.id) return;
+
+    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (data) setProfile(data);
+  }, [user?.id]);
 
   useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     if (user?.id) {
-      supabase.from('profiles').select('*').eq('id', user.id).single()
-        .then(({ data }) => { if (data) setProfile(data); });
+      await Promise.all([loadProfile(), refresh(false)]);
     }
-  }, [user]);
+    setRefreshing(false);
+  }, [loadProfile, refresh, user?.id]);
 
   const name = profile?.name || user?.user_metadata?.first_name || 'Aditya';
   const bio = profile?.bio || 'Exploring the intersection of tech and nature. Product Designer & Coffee enthusiast. ☕';
@@ -47,7 +60,11 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#5C7CFA" />}
+      >
         {/* Profile Info */}
         <View style={styles.profileSection}>
           <View style={styles.avatarWrap}>
@@ -78,18 +95,13 @@ export default function ProfileScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={[styles.statNum, { color: '#5C7CFA' }]}>14</Text>
-            <Text style={styles.statLabel}>MUTUAL</Text>
+            <Text style={[styles.statNum, { color: '#5C7CFA' }]}>{friendCount || 0}</Text>
+            <Text style={styles.statLabel}>FRIENDS</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statNum}>{friendCount || 0}</Text>
-            <Text style={styles.statLabel}>CONNECTIONS</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>89</Text>
-            <Text style={styles.statLabel}>RECONNECTED</Text>
+            <Text style={styles.statNum}>0</Text>
+            <Text style={styles.statLabel}>RECONNECTIONS</Text>
           </View>
         </View>
 

@@ -1,6 +1,22 @@
 // services/api.js
 const API_URL = 'https://connecti-push-api.vercel.app/api/send-notification';
 
+export const sendPushNotification = async ({ token, title, body, data = {} }) => {
+    if (!token) return null;
+
+    const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, title, body, data }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Push notification failed: ${response.status}`);
+    }
+
+    return response.json();
+};
+
 /**
  * Sends a Geofence Trigger to the backend.
  * This is called from the Background Task when the user enters a zone.

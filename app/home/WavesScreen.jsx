@@ -1,27 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthProvider';
 import { useGeofenceService } from '../../hooks/useGeofenceService';
-import { supabase } from '../../lib/supabase';
-
-// Demo nearby people data
-const DEMO_NEARBY = [
-  { id: 1, name: 'Sarah Jenkins', desc: 'Stanford Alum • Product', mutual: '3 mutual circles', dist: '5m', img: 'https://i.pravatar.cc/100?img=1' },
-  { id: 2, name: 'Leo Miller', desc: 'Design Circle • Co-founder', mutual: '2 mutual circles', dist: '14m', img: 'https://i.pravatar.cc/100?img=11' },
-  { id: 3, name: 'Elena R.', desc: 'Tech Conf • Backend', mutual: '1 mutual circle', dist: '22m', img: 'https://i.pravatar.cc/100?img=5' },
-];
+import { WaveService } from '../../services/WaveService';
 
 // Animated pulsing radar mini-view embedded in status card
 function RadarMini({ size = 80 }) {
@@ -81,21 +73,25 @@ export default function WavesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const { activeGeofences } = useGeofenceService();
+  const { activeGeofences, currentZone } = useGeofenceService();
 
-  const [isOpenToWave, setIsOpenToWave] = useState(false);
+  const [isOpenToWave, setIsOpenToWave] = useState(null); // null = loading
   const [timeLeft, setTimeLeft] = useState(30 * 60);
   const [isPaused, setIsPaused] = useState(false);
-  const [nearbyPeople] = useState(DEMO_NEARBY);
 
-  const currentHub = activeGeofences?.length > 0 ? activeGeofences[0].name : 'Citywalk Mall';
+  const currentHub = (typeof currentZone === 'string' ? currentZone : currentZone?.name)
+    || (activeGeofences?.length > 0 ? activeGeofences[0].name : 'Current Zone');
 
-  // Load initial open_to_wave state
   useEffect(() => {
-    if (user?.id) {
-      supabase.from('profiles').select('open_to_wave').eq('id', user.id).single()
-        .then(({ data }) => { if (data) setIsOpenToWave(data.open_to_wave); });
-    }
+    if (!user?.id) return;
+    Promise.all([WaveService.isWavedLocal(), WaveService.getRemainingTime()]).then(([waved, remaining]) => {
+      setIsOpenToWave(waved);
+      if (waved && remaining > 0) {
+        setTimeLeft(Math.ceil(remaining / 1000));
+      } else if (waved) {
+        setTimeLeft(30 * 60); // timer just started, full 30 min
+      }
+    });
   }, [user]);
 
   // Countdown timer
@@ -110,16 +106,34 @@ export default function WavesScreen() {
   }, [isOpenToWave, isPaused, timeLeft]);
 
   const handleStartWave = async () => {
-    setIsOpenToWave(true);
-    setTimeLeft(30 * 60);
-    setIsPaused(false);
-    if (user?.id) await supabase.from('profiles').update({ open_to_wave: true }).eq('id', user.id);
+    if (user?.id) {
+      const result = await WaveService.setOpenToWave(user.id, currentHub);
+      if (result) {
+        setIsOpenToWave(true);
+        setTimeLeft(30 * 60);
+        setIsPaused(false);
+      }
+    }
   };
 
   const handleStopWave = async () => {
-    setIsOpenToWave(false);
-    setIsPaused(false);
-    if (user?.id) await supabase.from('profiles').update({ open_to_wave: false }).eq('id', user.id);
+    Alert.alert(
+      "Stop Waving?",
+      "Do you want to stop waving in this zone?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Stop Waving",
+          style: "destructive",
+          onPress: async () => {
+            setIsOpenToWave(false);
+            setIsPaused(false);
+            if (user?.id) await WaveService.stopWaving(user.id);
+            router.back();
+          }
+        }
+      ]
+    );
   };
 
   const handleExtendWave = () => setTimeLeft(prev => prev + 15 * 60);
@@ -130,6 +144,15 @@ export default function WavesScreen() {
     const s = seconds % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  // Show loading spinner while checking wave status
+  if (isOpenToWave === null) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: '#6B7280', fontSize: 16 }}>Loading…</Text>
+      </View>
+    );
+  }
 
   // ── "Send a Wave" screen (open_to_wave = false) ───────────────────────────
   if (!isOpenToWave) {
@@ -228,47 +251,11 @@ export default function WavesScreen() {
           <Text style={styles.findingText}>Finding potential reconnection moments</Text>
         </View>
 
-        {/* ── Nearby People list ── */}
+        {/* Matches appear in Nearby Activity only after server-side matching. */}
         <View style={styles.nearbySection}>
-          {nearbyPeople.map((person) => (
-            <View key={person.id} style={styles.nearbyCard}>
-              <View style={styles.nearbyAvatarWrap}>
-                <Image source={{ uri: person.img }} style={styles.nearbyAvatar} />
-                <View style={styles.nearbyOnlineDot} />
-              </View>
-              <View style={styles.nearbyInfo}>
-                <Text style={styles.nearbyName}>{person.name}</Text>
-                <Text style={styles.nearbyDesc}>{person.desc}</Text>
-                <View style={styles.nearbyMutualRow}>
-                  <Ionicons name="people-outline" size={11} color="#5C7CFA" />
-                  <Text style={styles.nearbyMutual}>{person.mutual}</Text>
-                </View>
-              </View>
-              <View style={styles.nearbyRight}>
-                <View style={styles.nearbyDistBadge}>
-                  <Text style={styles.nearbyDist}>{person.dist}</Text>
-                </View>
-                <TouchableOpacity style={styles.nearbyWaveBtn}>
-                  <Text style={styles.nearbyWaveBtnText}>Wave 👋</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-
-          {/* Anonymous placeholder */}
-          <View style={[styles.nearbyCard, styles.nearbyCardAnon]}>
-            <View style={[styles.nearbyAvatarWrap, { backgroundColor: '#F3F4F6' }]}>
-              <Text style={styles.anonQ}>?</Text>
-            </View>
-            <View style={styles.nearbyInfo}>
-              <Text style={styles.nearbyName}>2 Anonymous</Text>
-              <Text style={styles.nearbyDesc}>Unknown connections nearby</Text>
-            </View>
-            <View style={styles.nearbyRight}>
-              <TouchableOpacity style={styles.nearbyRevealBtn}>
-                <Text style={styles.nearbyRevealText}>Reveal</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.waveWaitingCard}>
+            <View style={styles.waveWaitingIcon}><Ionicons name="people-outline" size={24} color="#5C7CFA" /></View>
+            <Text style={styles.waveWaitingText}>No match yet. A friend will appear in Nearby Activity only after the server confirms a mutual Wave.</Text>
           </View>
         </View>
 
@@ -591,6 +578,30 @@ const styles = StyleSheet.create({
 
   // Nearby People
   nearbySection: { gap: 10 },
+  waveWaitingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  waveWaitingIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E0E7FF',
+  },
+  waveWaitingText: {
+    flex: 1,
+    color: '#64748B',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   nearbyCard: {
     flexDirection: 'row',
     alignItems: 'center',

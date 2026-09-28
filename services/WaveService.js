@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import NativeGeofenceService from './NativeGeofenceService';
 
@@ -23,99 +23,98 @@ export class WaveService {
      * Can be called from foreground or background.
      * DB write only happens on ENTER (called once per zone entry).
      */
-    static async syncUserZone(userId, zoneName, location = null, openToWaveOverride = undefined, executionState = 'background') {
+    static async syncUserZone(userId, zoneName, location = null, openToWaveOverride = undefined, executionState = 'foreground') {
         try {
             console.log(`[Sync] 🌐 Syncing zone ${zoneName} for user ${userId}`);
 
-            const fcmToken = await AsyncStorage.getItem('fcm_device_token');
-            const expoToken = await AsyncStorage.getItem('expo_push_token');
+            const fcmTokenRaw = await AsyncStorage.getItem('fcm_device_token');
+            const expoTokenRaw = await AsyncStorage.getItem('expo_push_token');
+            // Tokens may be stored as JSON objects, extract the real string
+            let fcmToken = null;
+            let expoToken = null;
+            try {
+                if (fcmTokenRaw) {
+                    const parsed = JSON.parse(fcmTokenRaw);
+                    fcmToken = parsed?.fcmToken || (typeof parsed === 'string' ? parsed : null);
+                    expoToken = parsed?.expoToken || expoToken;
+                }
+            } catch { fcmToken = fcmTokenRaw; }
+            try {
+                if (expoTokenRaw) {
+                    const parsed = JSON.parse(expoTokenRaw);
+                    expoToken = expoToken || (parsed?.expoToken || (typeof parsed === 'string' ? parsed : null));
+                }
+            } catch { expoToken = expoToken || expoTokenRaw; }
+            console.log(`[Sync] 🔑 Tokens resolved — FCM: ${fcmToken ? fcmToken.substring(0, 20) + '...' : 'null'}, Expo: ${expoToken ? expoToken.substring(0, 20) + '...' : 'null'}`);
             const timerDataJson = await AsyncStorage.getItem(WAVE_TIMER_KEY);
             const timerData = timerDataJson ? JSON.parse(timerDataJson) : null;
             const isLocalWaved = timerData && (timerData.expiryTime > Date.now());
 
-            let zoneId = null;
             let finalZoneName = zoneName;
-
             if (!finalZoneName || finalZoneName === 'Unknown Zone') {
                 finalZoneName = await AsyncStorage.getItem('current_zone');
             }
-
-            if (finalZoneName && finalZoneName !== 'Unknown Zone') {
-                const { data: zone } = await supabase
-                    .from('geofence_zones')
-                    .select('id, name')
-                    .eq('name', finalZoneName)
-                    .limit(1)
-                    .maybeSingle();
-
-                if (zone) {
-                    zoneId = zone.id;
-                    finalZoneName = zone.name;
-                }
+            if (!finalZoneName || finalZoneName === 'Unknown Zone') {
+                console.warn('[Sync] ⚠️ No valid zone name, skipping sync');
+                return { success: false, openToWave: false };
             }
 
-            // Determine if we should be open to wave. 
-            // 1. Explicit override (manual wave)
-            // 2. Local valid timer (zone hopping)
-            // 3. Fallback to DB check
+            // Determine open_to_wave status
             let openToWaveStatus = false;
             if (openToWaveOverride !== undefined) {
                 openToWaveStatus = openToWaveOverride;
             } else if (isLocalWaved) {
                 openToWaveStatus = true;
             } else {
-                // If it's a fresh sync (no local timer and no override), default to FALSE.
-                // We no longer fallback to a DB check that might return true from a stale record.
-                console.log(`[Sync] 🆕 Initial entry sync for ${zoneName}. Defaulting to open_to_wave = false`);
-                openToWaveStatus = false;
+                console.log(`[Sync] 🆕 No active wave timer for ${finalZoneName}. Defaulting open_to_wave = false`);
             }
 
-            if (zoneId) {
-                // If it's a zone hop (already waved but new zone), refresh timer
-                if (openToWaveStatus && timerData && timerData.zoneName !== finalZoneName) {
-                    console.log(`[Sync] ♻️ Zone hopping from ${timerData.zoneName} to ${finalZoneName}. Refreshing timer.`);
-                    const newExpiry = Date.now() + WAVE_DURATION_MS;
-                    await AsyncStorage.setItem(WAVE_TIMER_KEY, JSON.stringify({ userId, zoneName: finalZoneName, expiryTime: newExpiry }));
-                    this.scheduleAutoReset(userId, newExpiry);
-                }
-
-                const upsertData = {
-                    user_id: userId,
-                    zone_id: zoneId,
-                    zone_name: finalZoneName,
-                    open_to_wave: openToWaveStatus,
-                    fcm_token: fcmToken,
-                    expo_push_token: expoToken,
-                    execution_state: executionState,
-                    last_updated: new Date().toISOString()
-                };
-
-                if (location) {
-                    upsertData.latitude = location.latitude;
-                    upsertData.longitude = location.longitude;
-                }
-
-                await supabase.from('active_zone_users').upsert(upsertData, { onConflict: 'user_id' });
-
-                // Sync with native side
-                if (Platform.OS === 'android') {
-                    // Always try to sync session context just in case
-                    const { data: { user: authUser } } = await supabase.auth.getUser();
-                    if (authUser) {
-                        await NativeGeofenceService.setSessionContext(
-                            authUser.id,
-                            process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://qczxsjfkjpcvjbqvcqbc.supabase.co',
-                            process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''
-                        );
-                    }
-                    await NativeGeofenceService.setIsWaved(openToWaveStatus, timerData?.expiryTime ? (timerData.expiryTime - Date.now()) : 0);
-                }
-
-                console.log(`[Sync] ✅ Presence synced in ${finalZoneName} (Open: ${openToWaveStatus})`);
-                return { success: true, openToWave: openToWaveStatus };
+            // Zone hop: refresh timer if moved to a new zone while waving
+            if (openToWaveStatus && timerData && timerData.zoneName !== finalZoneName) {
+                console.log(`[Sync] ♻️ Zone hopping from ${timerData.zoneName} to ${finalZoneName}. Refreshing timer.`);
+                const newExpiry = Date.now() + WAVE_DURATION_MS;
+                await AsyncStorage.setItem(WAVE_TIMER_KEY, JSON.stringify({ userId, zoneName: finalZoneName, expiryTime: newExpiry }));
+                this.scheduleAutoReset(userId, newExpiry);
             }
 
-            return { success: false, openToWave: false };
+            // Use RPC to avoid PostgREST uuid/text type casting issues
+            const { data: rpcResult, error: rpcError } = await supabase.rpc('sync_user_zone_presence', {
+                p_user_id: userId,
+                p_zone_name: finalZoneName,
+                p_open_to_wave: openToWaveStatus,
+                p_fcm_token: fcmToken || null,
+                p_expo_push_token: expoToken || null,
+                p_execution_state: executionState,
+                p_latitude: location?.latitude ?? null,
+                p_longitude: location?.longitude ?? null,
+            });
+
+            if (rpcError) {
+                console.error(`[Sync] ❌ RPC sync failed: ${rpcError.message}`);
+                return { success: false, openToWave: false };
+            }
+
+            if (!rpcResult?.success) {
+                console.warn(`[Sync] ⚠️ RPC returned failure: ${rpcResult?.error}`);
+                return { success: false, openToWave: false };
+            }
+
+            // Sync with native side
+            if (Platform.OS === 'android') {
+                const { data: { user: authUser } } = await supabase.auth.getUser();
+                if (authUser) {
+                    await NativeGeofenceService.setSessionContext(
+                        authUser.id,
+                        process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://qczxsjfkjpcvjbqvcqbc.supabase.co',
+                        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''
+                    );
+                }
+                await NativeGeofenceService.setIsWaved(openToWaveStatus, timerData?.expiryTime ? (timerData.expiryTime - Date.now()) : 0);
+            }
+
+            console.log(`[Sync] ✅ Presence synced in ${finalZoneName} (Open: ${openToWaveStatus})`);
+            return { success: true, openToWave: openToWaveStatus };
+
         } catch (error) {
             console.error('[Sync] ❌ Failed to sync presence:', error.message);
             return { success: false, openToWave: false };
@@ -135,6 +134,20 @@ export class WaveService {
             await AsyncStorage.setItem(WAVE_TIMER_KEY, JSON.stringify({ userId, zoneName, expiryTime }));
             this.scheduleAutoReset(userId, expiryTime);
 
+            // 1. Do a direct, targeted update first — this guarantees open_to_wave=true
+            //    regardless of whether the zone lookup in syncUserZone succeeds.
+            const { error: directError } = await supabase
+                .from('active_zone_users')
+                .update({ open_to_wave: true, last_updated: new Date().toISOString() })
+                .eq('user_id', userId);
+
+            if (directError) {
+                console.warn(`[WaveService] ⚠️ Direct update failed (${directError.message}), trying upsert via syncUserZone...`);
+            } else {
+                console.log(`[WaveService] ✅ Direct open_to_wave=true written to DB`);
+            }
+
+            // 2. Also do full sync to ensure all fields (zone_id, zone_name, etc.) are up to date
             await this.syncUserZone(userId, zoneName, null, true);
 
             // Notify native side immediately for killed-state persistence
@@ -149,6 +162,31 @@ export class WaveService {
                 
                 await NativeGeofenceService.setIsWaved(true, WAVE_DURATION_MS);
             }
+
+            // 3. Trigger matching asynchronously in a COMPLETELY SEPARATE request
+            // This guarantees that any matching failure cannot roll back the wave write above.
+            console.log(`[WaveService] 🔍 Triggering async match finding for user...`);
+            
+            // RUN DIAGNOSTIC LOGGING FIRST
+            supabase.rpc('debug_match_state', { p_user_id: userId })
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.error(`[WaveService:Debug] ❌ Failed to get debug state:`, error.message);
+                    } else {
+                        console.log(`[WaveService:Debug] 🕵️ Diagnostic State for User ${userId}: \n${JSON.stringify(data, null, 2)}`);
+                    }
+                })
+                .catch(err => console.error(`[WaveService:Debug] ❌ Exception:`, err));
+
+            supabase.rpc('match_active_waves_for_user', { p_user_id: userId })
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.warn(`[WaveService] ⚠️ Async match finding failed:`, error.message);
+                    } else {
+                        console.log(`[WaveService] ✅ Async match finding completed. Matches returned:`, JSON.stringify(data));
+                    }
+                })
+                .catch(err => console.warn(`[WaveService] ⚠️ Async match finding error:`, err));
             
             return true;
         } catch (error) {
@@ -306,15 +344,13 @@ export class WaveService {
                 console.log(`🗑️ [WaveService] 30 min reached for "${currentZone}". Timer expired. Clearing waved status.`);
             }
 
-            // Clear remote record OR set open_to_wave to false in DB
             console.log(`🗑️ [WaveService] Wave expired. Clearing record for user ${userId}.`);
 
-            // No zone -> clear remote record specifically for the expired zone
-            console.log(`🗑️ [WaveService] User left all zones after 30 min. Clearing record for ${wavedZone}.`);
             await supabase
                 .from('active_zone_users')
-                .delete()
-                .match({ user_id: userId, zone_id: wavedZone });
+                .update({ open_to_wave: false })
+                .eq('user_id', userId)
+                .eq('zone_name', wavedZone);
 
             await AsyncStorage.removeItem(WAVE_TIMER_KEY);
             await AsyncStorage.removeItem('current_zone');
@@ -325,6 +361,30 @@ export class WaveService {
             }
         } catch (error) {
             console.error('❌ Error in resetOpenToWave:', error);
+        }
+    }
+
+    static async stopWaving(userId) {
+        try {
+            const timerDataJson = await AsyncStorage.getItem(WAVE_TIMER_KEY);
+            const timerData = timerDataJson ? JSON.parse(timerDataJson) : null;
+            const zoneName = timerData?.zoneName || await AsyncStorage.getItem('current_zone');
+
+            let query = supabase
+                .from('active_zone_users')
+                .update({ open_to_wave: false })
+                .eq('user_id', userId);
+            if (zoneName) query = query.eq('zone_name', zoneName);
+            await query;
+
+            await AsyncStorage.removeItem(WAVE_TIMER_KEY);
+            if (resetTimeout) clearTimeout(resetTimeout);
+            resetTimeout = null;
+            if (Platform.OS === 'android') await NativeGeofenceService.setIsWaved(false, 0);
+            return true;
+        } catch (error) {
+            console.error('❌ Error stopping Wave:', error);
+            return false;
         }
     }
 

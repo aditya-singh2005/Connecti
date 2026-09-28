@@ -2,22 +2,22 @@
 // Handles incoming Wave/Hint interactions from the `interactions` table.
 // Accept → marks interaction as accepted + triggers connection creation.
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    Dimensions,
-    Animated,
-    Alert,
-    ScrollView,
-    ActivityIndicator,
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../lib/supabase';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { useAuth } from '../../context/AuthProvider';
+import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
 const INDIGO = '#6366F1';
@@ -137,11 +137,10 @@ export default function HintScreen() {
             const senderId = interactionData.sender_id;
 
             const { error: connError } = await supabase
-                .from('connections')
+                .from('friendships')
                 .insert({
                     user1_id: senderId,
                     user2_id: receiverId,
-                    zone_id: interactionData.zone_id,
                 })
                 .select()
                 .maybeSingle();
@@ -223,7 +222,7 @@ export default function HintScreen() {
                 <Animated.View style={[styles.successRing, { transform: [{ scale: pulseAnim }] }]}>
                     <Ionicons name="heart" size={52} color={INDIGO} />
                 </Animated.View>
-                <Text style={styles.successTitle}>It's a Connection! 🎉</Text>
+                <Text style={styles.successTitle}>It&apos;s a Connection! 🎉</Text>
                 <Text style={styles.successSubtitle}>
                     You and {senderProfile?.name || 'this person'} are now connected.
                 </Text>
@@ -255,7 +254,7 @@ export default function HintScreen() {
                 </View>
                 <Text style={styles.emptyTitle}>Wave Declined</Text>
                 <Text style={styles.emptySubtitle}>
-                    {senderProfile?.name || 'The other person'} won't know you declined.
+                    {senderProfile?.name || 'The other person'} won&apos;t know you declined.
                 </Text>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/home/HomeScreen')}>
                     <Text style={styles.backBtnText}>Back to Home</Text>
@@ -301,31 +300,24 @@ export default function HintScreen() {
                         : 'They want to connect with you right now. Do you wave back?'}
                 </Text>
 
-                {/* Sender Info Card */}
-                <View style={styles.senderCard}>
-                    <View style={[styles.senderAvatar, isHint ? styles.hintAvatar : styles.waveAvatar]}>
-                        <Text style={styles.senderAvatarText}>
-                            {senderProfile?.name?.charAt(0)?.toUpperCase() || '?'}
-                        </Text>
-                    </View>
-                    <View style={styles.senderInfo}>
-                        {isHint ? (
-                            <>
-                                <Text style={styles.senderName}>🔍 Anonymous Hint</Text>
-                                <Text style={styles.senderUsername}>Accept to see who it is</Text>
-                            </>
-                        ) : (
-                            <>
-                                <Text style={styles.senderName}>{senderProfile?.name || 'Unknown'}</Text>
-                                {senderProfile?.username && (
-                                    <Text style={styles.senderUsername}>@{senderProfile.username}</Text>
-                                )}
-                                {senderProfile?.city && (
-                                    <Text style={styles.senderCity}>📍 {senderProfile.city}</Text>
-                                )}
-                            </>
-                        )}
-                    </View>
+                {/* Demo Hints Section */}
+                <View style={styles.hintsContainer}>
+                    <Text style={styles.hintsTitle}>You have things in common:</Text>
+                    
+                    <Animated.View style={[styles.hintBadge, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
+                        <Ionicons name="school" size={20} color={PURPLE} />
+                        <Text style={styles.hintText}>You share the same education institution</Text>
+                    </Animated.View>
+
+                    <Animated.View style={[styles.hintBadge, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }]}>
+                        <Ionicons name="game-controller" size={20} color={PURPLE} />
+                        <Text style={styles.hintText}>You both like playing chess</Text>
+                    </Animated.View>
+
+                    <Animated.View style={[styles.hintBadge, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }] }]}>
+                        <Ionicons name="musical-notes" size={20} color={PURPLE} />
+                        <Text style={styles.hintText}>This user likes to listen to music and art</Text>
+                    </Animated.View>
                 </View>
 
                 {/* Action Buttons */}
@@ -419,6 +411,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
+        marginBottom: 20,
     },
     waveRing: {
         backgroundColor: '#EEF2FF',
@@ -429,7 +422,7 @@ const styles = StyleSheet.create({
         borderColor: '#7C3AED',
     },
     titleMain: {
-        fontSize: 24,
+        fontSize: 26,
         fontWeight: '800',
         color: '#111827',
         textAlign: 'center',
@@ -437,11 +430,48 @@ const styles = StyleSheet.create({
         letterSpacing: -0.5,
     },
     titleSub: {
-        fontSize: 15,
+        fontSize: 16,
         color: '#6B7280',
         textAlign: 'center',
-        lineHeight: 22,
+        lineHeight: 24,
         marginBottom: 28,
+        paddingHorizontal: 10,
+    },
+    hintsContainer: {
+        width: '100%',
+        marginBottom: 32,
+    },
+    hintsTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#9CA3AF',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    hintBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 2,
+        borderLeftWidth: 4,
+        borderLeftColor: PURPLE,
+    },
+    hintText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#374151',
+        marginLeft: 12,
+        flex: 1,
     },
     senderCard: {
         flexDirection: 'row',

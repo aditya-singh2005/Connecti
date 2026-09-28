@@ -84,11 +84,17 @@ export default function FriendRequestsScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Inbox</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>Inbox</Text>
+        </View>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Modern Tabs */}
+      <View style={styles.intro}>
+        <Text style={styles.introTitle}>Keep your circle moving.</Text>
+        <Text style={styles.introText}>Review people who want to connect and follow up on requests you sent.</Text>
+      </View>
+
       <View style={styles.tabsWrapper}>
         <View style={styles.tabsContainer}>
           <TouchableOpacity
@@ -96,9 +102,10 @@ export default function FriendRequestsScreen() {
             onPress={() => setActiveTab('received')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
-              Received
-            </Text>
+            <Ionicons name="people-outline" size={17} color={activeTab === 'received' ? '#111827' : '#6B7280'} />
+            <View style={styles.tabCopy}>
+              <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>Received</Text>
+            </View>
             {pendingCount > 0 ? (
               <View style={[styles.tabBadge, activeTab === 'received' && styles.activeTabBadge]}>
                 <Text style={[styles.tabBadgeText, activeTab === 'received' && styles.activeTabBadgeText]}>
@@ -113,9 +120,10 @@ export default function FriendRequestsScreen() {
             onPress={() => setActiveTab('sent')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>
-              Sent
-            </Text>
+            <Ionicons name="paper-plane-outline" size={17} color={activeTab === 'sent' ? '#111827' : '#6B7280'} />
+            <View style={styles.tabCopy}>
+              <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>Sent</Text>
+            </View>
             {sentRequests.length > 0 ? (
               <View style={[styles.tabBadge, activeTab === 'sent' && styles.activeTabBadge]}>
                 <Text style={[styles.tabBadgeText, activeTab === 'sent' && styles.activeTabBadgeText]}>
@@ -141,8 +149,8 @@ export default function FriendRequestsScreen() {
                       </Text>
                     </View>
                     <View style={styles.requestInfo}>
-                      <Text style={styles.requestName}>{request.name}</Text>
-                      <Text style={styles.requestContact}>{request.contact}</Text>
+                      <Text style={styles.requestName}>{request.name || request.username || 'Connecti user'}</Text>
+                      <Text style={styles.requestMessage}>wants to be your friend</Text>
                     </View>
                   </View>
 
@@ -150,12 +158,14 @@ export default function FriendRequestsScreen() {
                     <TouchableOpacity
                       onPress={() => handleRejectRequest(request.id, request.name)}
                       style={styles.iconButtonGhost}
+                      accessibilityLabel={`Reject ${request.name || 'friend request'}`}
                     >
                       <Ionicons name="close" size={20} color="#6B7280" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleAcceptRequest(request.id, request.name)}
                       style={styles.iconButtonPrimary}
+                      accessibilityLabel={`Accept ${request.name || 'friend request'}`}
                     >
                       <Ionicons name="checkmark" size={20} color="#FFFFFF" />
                     </TouchableOpacity>
@@ -187,11 +197,12 @@ export default function FriendRequestsScreen() {
                       </Text>
                     </View>
                     <View style={styles.requestInfo}>
-                      <Text style={styles.requestName}>{request.name}</Text>
-                      <Text style={styles.requestContact}>{request.contact}</Text>
+                      <Text style={styles.requestLabel}>YOU WANT TO CONNECT</Text>
+                      <Text style={styles.requestName}>{request.name || request.username || 'Connecti user'}</Text>
+                      {!!request.contact && <Text style={styles.requestContact}>{request.contact}</Text>}
                       <View style={styles.pendingStatusRow}>
                         <View style={styles.pendingDot} />
-                        <Text style={styles.pendingStatusText}>Awaiting response</Text>
+                        <Text style={styles.pendingStatusText}>Waiting for their response</Text>
                       </View>
                     </View>
                   </View>
@@ -199,8 +210,10 @@ export default function FriendRequestsScreen() {
                   <TouchableOpacity
                     onPress={() => handleCancelRequest(request.id, request.name)}
                     style={styles.cancelBtn}
+                    accessibilityLabel={`Cancel request to ${request.name || 'friend'}`}
                   >
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                    <Ionicons name="close-circle-outline" size={15} color="#C2410C" />
+                    <Text style={styles.cancelBtnText}>Withdraw</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -236,9 +249,34 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 16,
   },
+  headerCopy: {
+    alignItems: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#5C7CFA',
+    marginBottom: 3,
+  },
   backButton: {
     padding: 4,
     marginLeft: -4,
+  },
+  intro: {
+    paddingHorizontal: 24,
+    paddingBottom: 18,
+  },
+  introTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 5,
+  },
+  introText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7280',
+    maxWidth: 330,
   },
   headerTitle: {
     fontSize: 20,
@@ -262,6 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 8,
+    gap: 7,
   },
   activeTab: {
     backgroundColor: '#FFFFFF',
@@ -278,6 +317,14 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#111827',
+  },
+  tabCopy: {
+    alignItems: 'flex-start',
+  },
+  tabHint: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 1,
   },
   tabBadge: {
     backgroundColor: '#E5E7EB',
@@ -341,6 +388,16 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 2,
   },
+  requestLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9CA3AF',
+    marginBottom: 4,
+  },
+  requestMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
   requestContact: {
     fontSize: 13,
     color: '#6B7280',
@@ -389,6 +446,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: '#FEE2E2',

@@ -1,94 +1,182 @@
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthProvider";
-import { useGeofenceService } from "../../hooks/useGeofenceService";
 import { useFriendships } from "../../hooks/useFriendships";
+import { useGeofenceService } from "../../hooks/useGeofenceService";
 import { supabase } from "../../lib/supabase";
+import { cancelReconnection, fetchMyReconnections } from "../../services/ReconnectionService";
+import { WaveService } from "../../services/WaveService";
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { activeGeofences } = useGeofenceService();
-  const { unseenCount } = useFriendships();
+  const { activeGeofences, currentZone } = useGeofenceService();
+  const { unseenCount, refreshFriendships } = useFriendships();
   const [isOpenToWave, setIsOpenToWave] = useState(false);
+  const [nearbyActivities, setNearbyActivities] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchWaveStatus = useCallback(async () => {
-    if (user?.id) {
-      const { data } = await supabase.from('profiles').select('open_to_wave').eq('id', user.id).single();
-      if (data) setIsOpenToWave(data.open_to_wave);
+    if (!user?.id) return;
+
+    // 1. Check local timer FIRST — it's instant and avoids race conditions on navigation
+    const isLocallyWaved = await WaveService.isWavedLocal();
+    if (isLocallyWaved) {
+      setIsOpenToWave(true);
+      return;
     }
+
+    // 2. Fallback to DB check (covers cases where timer was cleared but DB still has the record)
+    const { data } = await supabase
+      .from('active_zone_users')
+      .select('open_to_wave')
+      .eq('user_id', user.id)
+      .eq('open_to_wave', true)
+      .gt('last_updated', new Date(Date.now() - 30 * 60 * 1000).toISOString())
+      .maybeSingle();
+    setIsOpenToWave(Boolean(data?.open_to_wave));
   }, [user?.id]);
+
 
   useEffect(() => {
     fetchWaveStatus();
   }, [fetchWaveStatus]);
 
+  const fetchNearbyActivities = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const sessions = await fetchMyReconnections();
+      const sessionActivities = sessions.map(session => ({ id: session.id, sessionId: session.id, title: ['SHOWN_HINTS'].includes(session.phase) ? 'Someone you might know' : session.phase === 'RECONNECTED' ? 'You found each other' : 'Reveal is waiting for both of you', description: ['SHOWN_HINTS'].includes(session.phase) ? 'A mutual Wave matched you in this Connecti Zone.' : session.phase === 'RECONNECTED' ? 'Your connection is ready to chat.' : 'Continue without revealing identity yet.', icon: session.phase === 'RECONNECTED' ? 'sparkles-outline' : 'person-outline', color: session.phase === 'RECONNECTED' ? '#BE123C' : '#0F766E', avatarColor: session.phase === 'RECONNECTED' ? '#FFE4E6' : '#DDF4EE', type: 'session', phase: session.phase, createdAt: session.phase_updated_at }))
+        .filter(session => ['SHOWN_HINTS', 'BOTH_REVEALS_PENDING', 'RECONNECTED'].includes(session.phase));
+      setNearbyActivities(sessionActivities);
+    } catch (error) {
+      console.warn('[Home] Could not load nearby activity:', error.message);
+    }
+  }, [user?.id]);
+
+  useEffect(() => { fetchNearbyActivities(); }, [fetchNearbyActivities]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    const channel = supabase
+      .channel(`nearby-activity-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'interactions',
+      }, payload => {
+        const session = payload.new || payload.old;
+        if (session?.sender_id === user.id || session?.receiver_id === user.id) {
+          fetchNearbyActivities();
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchNearbyActivities, user?.id]);
+
   useFocusEffect(
     useCallback(() => {
       fetchWaveStatus();
-    }, [fetchWaveStatus])
+      fetchNearbyActivities();
+    }, [fetchWaveStatus, fetchNearbyActivities])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        fetchWaveStatus(),
+        fetchNearbyActivities(),
+        refreshFriendships(false),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchNearbyActivities, fetchWaveStatus, refreshFriendships]);
+
+  const currentHub = (typeof currentZone === 'string' ? currentZone : currentZone?.name) || (activeGeofences && activeGeofences.length > 0 ? activeGeofences[0].name : null);
 
   const handleWaveButtonPress = () => {
     if (isOpenToWave) {
+      // Already waving — show stop confirmation dialog
       Alert.alert(
         "Stop Waving?",
         "Do you want to stop waving in this zone?",
         [
           { text: "Cancel", style: "cancel" },
-          { 
-            text: "Stop Waving", 
-            style: "destructive", 
+          {
+            text: "Stop Waving",
+            style: "destructive",
             onPress: async () => {
               setIsOpenToWave(false);
               if (user?.id) {
-                await supabase.from('profiles').update({ open_to_wave: false }).eq('id', user.id);
+                await WaveService.stopWaving(user.id);
               }
-            } 
+            }
           }
         ]
       );
     } else {
+      if (!currentHub || currentHub === 'No Connecti Zone detected') {
+        Alert.alert(
+          "No Zone Detected",
+          "You need to be inside a Connecti Zone to wave. Try walking around or refreshing."
+        );
+        return;
+      }
+      // Not waving — show start confirmation, then redirect to WavesScreen with timer
       Alert.alert(
         "Start Waving",
         `You are going to wave for the current Connecti zone (${currentHub}).`,
         [
           { text: "Cancel", style: "cancel" },
-          { 
-            text: "Start Waving", 
+          {
+            text: "Start Waving",
             onPress: async () => {
-              setIsOpenToWave(true);
-              if (user?.id) {
-                await supabase.from('profiles').update({ open_to_wave: true }).eq('id', user.id);
+              if (!user?.id) return;
+              const result = await WaveService.setOpenToWave(user.id, currentHub);
+              if (result) {
+                setIsOpenToWave(true);
+                router.push('/home/WavesScreen');
+              } else {
+                Alert.alert(
+                  "Wave Failed",
+                  "Could not start waving. Please make sure you're in a Connecti Zone and try again."
+                );
               }
-              router.push('/home/WavesScreen');
-            } 
+            }
           }
         ]
       );
     }
   };
 
-  const currentHub = activeGeofences && activeGeofences.length > 0 ? activeGeofences[0].name : "Select Citywalk Mall";
+
+
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: insets.top + 20 }}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#6366F1" />
+      }
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -103,6 +191,8 @@ export default function HomeScreen() {
         <TouchableOpacity 
           style={styles.notificationBtn}
           onPress={() => router.push('/home/FriendRequestsScreen')}
+          accessibilityLabel="Open Inbox"
+          accessibilityRole="button"
         >
           <Ionicons name="notifications-outline" size={24} color="#111827" />
           {unseenCount > 0 ? (
@@ -122,22 +212,22 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.statusTitle}>Smart Reconnect is Active</Text>
         <Text style={styles.statusDesc}>
-          We're looking for reconnection opportunities around you in real-time.
+          We&apos;re looking for reconnection opportunities around you in real-time.
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.hubSelector} onPress={() => router.push('/home/GeofenceTestScreen')}>
+      <View style={styles.hubSelector}>
         <View style={styles.hubLeft}>
           <View style={styles.hubIconContainer}>
             <Ionicons name="location-outline" size={20} color="#6366F1" />
           </View>
           <View>
-            <Text style={styles.hubLabel}>Current Hub</Text>
+            <Text style={styles.hubLabel}>Current Connecti Zone</Text>
             <Text style={styles.hubName}>{currentHub}</Text>
           </View>
         </View>
-        <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-      </TouchableOpacity>
+        <Ionicons name="checkmark-circle-outline" size={20} color="#10B981" />
+      </View>
 
       <View style={styles.waveSection}>
         <TouchableOpacity 
@@ -150,7 +240,7 @@ export default function HomeScreen() {
           {isOpenToWave && <Text style={styles.waveButtonSub}>Tap to manage</Text>}
         </TouchableOpacity>
         <Text style={styles.waveHint}>
-          A Wave alerts people you've met before that you're nearby.
+          A Wave alerts people you&apos;ve met before that you&apos;re nearby.
         </Text>
       </View>
 
@@ -163,39 +253,46 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.activityList}>
-          <View style={styles.activityCard}>
-            <View style={[styles.activityIconBox, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="flash-outline" size={20} color="#D97706" />
+          {nearbyActivities.length === 0 ? (
+            <View style={styles.emptyActivity}><Ionicons name="shield-checkmark-outline" size={24} color="#94A3B8" /><Text style={styles.emptyActivityText}>No private reconnection activity yet.</Text></View>
+          ) : nearbyActivities.map(activity => (
+            <View key={activity.id} style={styles.activityCard}>
+              <View style={[styles.activityIconBox, { backgroundColor: activity.avatarColor }]}><Ionicons name={activity.icon} size={22} color={activity.color} /></View>
+              <View style={styles.activityContent}>
+                <Text style={styles.activityCardTitle}>{activity.title}</Text>
+                <Text style={styles.activityCardDesc}>{activity.description}</Text>
+                {['SHOWN_HINTS'].includes(activity.phase) ? (
+                  <View style={styles.activityActions}>
+                    <TouchableOpacity
+                      style={styles.showHintButton}
+                      onPress={() => router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: activity.sessionId } })}
+                    >
+                      <Text style={styles.showHintButtonText}>Show hints</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.removeActivityButton}
+                      onPress={async () => {
+                        await cancelReconnection(activity.sessionId);
+                        fetchNearbyActivities();
+                      }}
+                    >
+                      <Text style={styles.removeActivityButtonText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {activity.phase === 'RECONNECTED' ? (
+                  <View style={styles.activityActions}>
+                    <TouchableOpacity
+                      style={styles.showHintButton}
+                      onPress={() => router.push({ pathname: '/home/RevealedScreen', params: { sessionId: activity.sessionId } })}
+                    >
+                      <Text style={styles.showHintButtonText}>See who it is</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
             </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityCardTitle}>New Ripples Nearby</Text>
-              <Text style={styles.activityCardDesc}>3 people from Tech Conf are in this zone.</Text>
-            </View>
-            <Text style={styles.activityTime}>2m ago</Text>
-          </View>
-
-          <View style={styles.activityCard}>
-            <View style={[styles.activityIconBox, { backgroundColor: '#D1FAE5' }]}>
-              <Image source={{ uri: 'https://i.pravatar.cc/100?img=5' }} style={styles.activityAvatar} />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityCardTitle}>Priya just Waved</Text>
-              <Text style={styles.activityCardDesc}>She is at Blue Tokai, 200m away.</Text>
-            </View>
-            <TouchableOpacity style={styles.waveBackBtn}>
-              <Text style={styles.waveBackText}>WAVE BACK</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.activityCard}>
-            <View style={[styles.activityIconBox, { backgroundColor: '#F3F4F6' }]}>
-              <Ionicons name="help" size={20} color="#4B5563" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={styles.activityCardTitle}>Curious about who's here?</Text>
-              <Text style={styles.activityCardDesc}>Upgrade to Reveal Mode to see names.</Text>
-            </View>
-          </View>
+          ))}
         </View>
       </View>
     </ScrollView>
@@ -241,7 +338,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -302,6 +399,32 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 13,
     lineHeight: 18,
+  },
+  activityActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  showHintButton: {
+    backgroundColor: '#0F766E',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  showHintButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  removeActivityButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  removeActivityButtonText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
   },
   hubSelector: {
     flexDirection: 'row',
@@ -382,6 +505,15 @@ const styles = StyleSheet.create({
   },
   activitySection: {
     flex: 1,
+  },
+  emptyActivity: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 30,
+  },
+  emptyActivityText: {
+    color: '#64748B',
+    fontSize: 14,
   },
   activityHeader: {
     flexDirection: 'row',

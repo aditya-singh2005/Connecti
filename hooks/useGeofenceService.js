@@ -1,16 +1,15 @@
 // hooks/useGeofenceService.js - FIXED: Better detection + Single notifications + All zones
-import { useState, useEffect, useRef } from 'react';
-import { Platform, Alert, Linking, AppState, NativeModules } from 'react-native';
-import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
-import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import * as TaskManager from 'expo-task-manager';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, AppState, Linking, NativeModules, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { GEOFENCE_TASK_NAME, LOCATION_REFRESH_TASK_NAME, setupGeofenceNotificationChannels, storeFCMToken, refreshGeofencesAtLocation } from '../services/GeofenceManager';
 import ExpoPushTokenService from '../services/ExpoPushTokenService';
-import { WaveService } from '../services/WaveService';
-import { DebugService } from '../services/DebugService';
+import { GEOFENCE_TASK_NAME, LOCATION_REFRESH_TASK_NAME, refreshGeofencesAtLocation, setupGeofenceNotificationChannels, storeFCMToken } from '../services/GeofenceManager';
 import NativeGeofenceService from '../services/NativeGeofenceService'; // ✅ Native geofencing
+import { WaveService } from '../services/WaveService';
 
 const GEOFENCE_EVENTS_KEY = 'geofence_events';
 const GEOFENCE_CONFIG_KEY = 'geofence_config';
@@ -522,8 +521,20 @@ export function useGeofenceService() {
     checkZoneEntryLock.current = true;
 
     try {
-      const allZones = allNearbyZonesRef.current;
+      let allZones = allNearbyZonesRef.current;
       const activeZones = activeGeofencesRef.current;
+
+      // On a cold start the geofence registration may still be initializing.
+      // Fetch the authoritative nearby zones before deciding that no zone exists.
+      if (allZones.length === 0 && activeZones.length === 0) {
+        try {
+          allZones = await fetchNearbyZones(location.latitude, location.longitude, 10000);
+          setAllNearbyZones(allZones);
+        } catch (error) {
+          console.warn('[STARTUP] Could not fetch nearby zones:', error.message);
+        }
+      }
+
       const zonesToCheck = allZones.length > 0 ? allZones : activeZones;
 
       if (zonesToCheck.length === 0) return;

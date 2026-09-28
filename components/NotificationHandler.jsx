@@ -1,11 +1,10 @@
 // components/NotificationHandler.jsx - Wave/Later action buttons + pending-action drain
-import { useEffect, useRef } from 'react';
-import { Platform, AppState, NativeModules } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthProvider';
 import { useRouter } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { AppState, NativeModules, Platform } from 'react-native';
+import { useAuth } from '../context/AuthProvider';
+import { supabase } from '../lib/supabase';
 import FCMTokenService from '../services/FCMTokenService';
 import { WaveService } from '../services/WaveService';
 
@@ -125,7 +124,20 @@ export default function NotificationHandler() {
             },
           },
         ]);
-        console.log('✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED');
+
+        await Notifications.setNotificationCategoryAsync('FRIEND_REQUEST', [
+          {
+            identifier: 'ACCEPT_REQUEST',
+            buttonTitle: 'Accept',
+            options: { opensAppToForeground: true },
+          },
+          {
+            identifier: 'DECLINE_REQUEST',
+            buttonTitle: 'Decline',
+            options: { isDestructive: true, opensAppToForeground: true },
+          },
+        ]);
+        console.log('✅ Registered Categories: GEOFENCE_MATCH, MATCH_HINT, MATCH_REVEALED, FRIEND_REQUEST');
       }
 
       // ✅ GUARD: Only set up global listeners once per app session
@@ -168,6 +180,17 @@ export default function NotificationHandler() {
           console.log('🌊 WAVE HINT NOTIFICATION DETECTED');
         }
 
+        if (data?.type === 'MATCH_HINT' && actionId !== 'REVEAL' && actionId !== 'CHECK_HINTS') {
+          await dismissAndCollapse();
+          setTimeout(() => {
+            if (data?.sessionId) {
+              router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId } });
+            } else {
+              router.replace('/home/HomeScreen');
+            }
+          }, 100);
+        }
+
         // --- ACTIONS ---
 
         // 1. WAVE (From Zone Entry)
@@ -201,11 +224,11 @@ export default function NotificationHandler() {
 
           if (matchId && user?.id) {
             try {
-              // Call reveal_match RPC
+              // Call mark_user_revealed RPC
               const { data: revealData, error } = await supabase
-                .rpc('reveal_match', {
-                  match_id: matchId,
-                  user_id: user.id
+                .rpc('mark_user_revealed', {
+                  p_interaction_id: matchId || data?.interactionId,
+                  p_user_id: user.id
                 });
 
               if (error) {
@@ -220,7 +243,9 @@ export default function NotificationHandler() {
 
           await dismissAndCollapse();
           setTimeout(() => {
-            if (matchId) {
+            if (data?.sessionId) {
+              router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId, interactionId: matchId } });
+            } else if (matchId) {
               router.push({ pathname: '/home/HintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
@@ -234,7 +259,9 @@ export default function NotificationHandler() {
           await dismissAndCollapse();
           setTimeout(() => {
             const matchId = data?.matchId;
-            if (matchId) {
+            if (data?.sessionId) {
+              router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId, interactionId: matchId } });
+            } else if (matchId) {
               router.push({ pathname: '/home/HintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
@@ -294,12 +321,40 @@ export default function NotificationHandler() {
           }
           await dismissAndCollapse();
           setTimeout(() => {
-            if (matchId) {
+            if (data?.sessionId) {
+              router.push({ pathname: '/home/RevealedScreen', params: { sessionId: data.sessionId } });
+            } else if (matchId) {
               router.push({ pathname: '/home/HintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
             }
           }, 100);
+        }
+
+        // 4.7 FRIEND REQUEST ACTIONS
+        else if (actionId === 'ACCEPT_REQUEST' || actionId === 'DECLINE_REQUEST') {
+          const interactionId = data?.interactionId;
+          if (interactionId && user?.id) {
+            const nextStatus = actionId === 'ACCEPT_REQUEST' ? 'accepted' : 'ignored';
+            const { data: interaction, error: interactionError } = await supabase
+              .from('interactions')
+              .select('sender_id, receiver_id, zone_id')
+              .eq('id', interactionId)
+              .eq('receiver_id', user.id)
+              .single();
+
+            if (!interactionError) {
+              await supabase.from('interactions').update({ status: nextStatus }).eq('id', interactionId);
+              if (nextStatus === 'accepted') {
+                await supabase.from('friendships').upsert({
+                  user1_id: interaction.sender_id,
+                  user2_id: interaction.receiver_id,
+                }, { onConflict: 'user1_id,user2_id' });
+              }
+            }
+          }
+          await dismissAndCollapse();
+          router.replace('/home/FriendRequestsScreen');
         }
 
         // 5. BODY TAP (Default)
@@ -308,10 +363,18 @@ export default function NotificationHandler() {
           await dismissAndCollapse();
           setTimeout(() => {
             const matchId = data?.matchId;
+            if (data?.type === 'FRIEND_REQUEST') {
+              router.replace('/home/FriendRequestsScreen');
+              return;
+            }
             // Route any hint/reveal/skipped notification to HintScreen
-            const hintTypes = ['MATCH_REVEALED', 'WAVE_HINT', 'reveal', 'skipped'];
+            const hintTypes = ['WAVE_HINT', 'reveal', 'skipped'];
+            if (data?.sessionId && data?.type === 'MATCH_REVEALED') {
+              router.push({ pathname: '/home/RevealedScreen', params: { sessionId: data.sessionId } });
+              return;
+            }
             if (matchId && hintTypes.includes(data?.type)) {
-              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId, interactionId: matchId } });
               return;
             }
             router.replace('/home/HomeScreen');

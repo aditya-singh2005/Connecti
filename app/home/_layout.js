@@ -342,6 +342,19 @@ export default function HomeLayout() {
         }}
       />
 
+      <Tabs.Screen
+        name="ShowHintScreen"
+        options={{ href: null, headerShown: false }}
+      />
+      <Tabs.Screen
+        name="RevealScreen"
+        options={{ href: null, headerShown: false }}
+      />
+      <Tabs.Screen
+        name="RevealedScreen"
+        options={{ href: null, headerShown: false }}
+      />
+
       {/* 🗺️ HIDE GeofenceTestScreen from navbar */}
       <Tabs.Screen
         name="GeofenceTestScreen"

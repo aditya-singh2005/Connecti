@@ -25,6 +25,9 @@ export function useChatNotifications() {
   const appStateRef = useRef(AppState.currentState);
   const currentScreenRef = useRef(null);
   const isInitializedRef = useRef(false);
+  const subscriptionStatusRef = useRef('CLOSED');
+  const subscriptionRetryRef = useRef(null);
+  const subscriptionRetryAttemptRef = useRef(0);
 
   // Register for Push Notifications and get FCM Device Token
   const registerForPushNotificationsAsync = async () => {
@@ -145,7 +148,12 @@ export function useChatNotifications() {
 
   // Setup realtime subscription for new messages
   const setupMessageSubscription = useCallback(() => {
-    if (!userId || subscriptionRef.current) return;
+    if (!userId || (subscriptionRef.current && subscriptionStatusRef.current === 'SUBSCRIBED')) return;
+
+    if (subscriptionRef.current) {
+      supabase.removeChannel(subscriptionRef.current);
+      subscriptionRef.current = null;
+    }
 
     console.log('🔔 Setting up realtime subscription...');
 
@@ -178,7 +186,28 @@ export function useChatNotifications() {
         }
       )
       .subscribe((status) => {
+        subscriptionStatusRef.current = status;
         console.log('📡 Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          subscriptionRetryAttemptRef.current = 0;
+          return;
+        }
+
+        if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !subscriptionRetryRef.current) {
+          const delay = Math.min(30000, 1000 * (2 ** Math.min(subscriptionRetryAttemptRef.current, 5)));
+          subscriptionRetryAttemptRef.current += 1;
+          console.warn(`📡 Realtime ${status}; retrying in ${delay}ms`);
+          subscriptionRetryRef.current = setTimeout(() => {
+            subscriptionRetryRef.current = null;
+            if (!userId) return;
+            if (subscriptionRef.current) {
+              supabase.removeChannel(subscriptionRef.current);
+              subscriptionRef.current = null;
+            }
+            supabase.realtime.connect();
+            setupMessageSubscription();
+          }, delay);
+        }
       });
 
   }, [userId]);
@@ -261,13 +290,22 @@ export function useChatNotifications() {
       if (nextAppState === 'active') {
         clearBadge();
         updateBadgeCount();
+
+        if (userId && subscriptionStatusRef.current !== 'SUBSCRIBED' && !subscriptionRetryRef.current) {
+          if (subscriptionRef.current) {
+            supabase.removeChannel(subscriptionRef.current);
+            subscriptionRef.current = null;
+          }
+          supabase.realtime.connect();
+          setupMessageSubscription();
+        }
       }
     });
 
     return () => {
       subscription?.remove();
     };
-  }, [clearBadge, updateBadgeCount]);
+  }, [clearBadge, setupMessageSubscription, updateBadgeCount, userId]);
 
   // Setup notification listeners
   useEffect(() => {

@@ -1,16 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { useFriendships } from "../../hooks/useFriendships";
 
@@ -57,6 +57,12 @@ const UserCard = memo(function UserCard({
 
   const isOutgoingPending = pendingOverride ?? friendshipStatus === 'outgoing_pending';
 
+  useEffect(() => {
+    if (isFriend || friendshipStatus !== 'outgoing_pending') {
+      setPendingOverride(null);
+    }
+  }, [friendshipStatus, interactionId, isFriend]);
+
   return (
     <View style={styles.userCard}>
       <View style={styles.userLeft}>
@@ -74,7 +80,7 @@ const UserCard = memo(function UserCard({
       {isFriend ? (
         <View style={styles.friendBadgeContainer}>
           <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-          <Text style={styles.friendBadge}>Friends</Text>
+          <Text style={styles.friendBadge}>Added</Text>
         </View>
       ) : friendshipStatus === 'incoming_pending' ? (
         <View style={styles.requestActions}>
