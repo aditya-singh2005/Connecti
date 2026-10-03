@@ -9,10 +9,17 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
+const { width: SCREEN_W } = Dimensions.get("window");
+const IS_TABLET = SCREEN_W >= 768;
 
 export default function Login() {
   const router = useRouter();
@@ -44,14 +51,15 @@ export default function Login() {
   };
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="none"
-      >
+    <SafeAreaView style={styles.safe} edges={['top','bottom']}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.screen}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
+        >
         {/* Top section */}
         <View style={styles.topSection}>
           <View style={styles.logoWrapper}>
@@ -153,25 +161,28 @@ export default function Login() {
             <Text style={styles.signupLink}> Create one →</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#F9FAFB" },
   screen: {
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: 80,
-    paddingBottom: 40,
+    paddingHorizontal: IS_TABLET ? 80 : 24,
+    paddingTop: 40,
+    paddingBottom: 24,
+    justifyContent: "center",
   },
   topSection: {
     alignItems: "center",
-    marginBottom: 36,
+    marginBottom: 24,
   },
   logoWrapper: {
     width: 88,
@@ -224,10 +235,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#FCA5A5",
+    overflow: "hidden",
   },
   errorBoxHidden: {
+    height: 0,
+    padding: 0,
+    marginBottom: 0,
+    borderWidth: 0,
     opacity: 0,
-    // Keep space so layout doesn't shift, just invisible
   },
   errorText: {
     flex: 1,
@@ -277,7 +292,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   loginBtnLoading: {
-    backgroundColor: "#818CF8",
+    backgroundColor: "#4F46E5",
   },
   loginBtnText: {
     fontSize: 17,
@@ -297,6 +312,6 @@ const styles = StyleSheet.create({
   signupLink: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#6366F1",
+    color: "#818CF8",
   },
 });

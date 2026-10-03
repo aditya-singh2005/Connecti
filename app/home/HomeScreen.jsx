@@ -1,9 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Location from 'expo-location';
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     Alert,
+    AppState,
+    Image,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -23,11 +27,93 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { activeGeofences, currentZone } = useGeofenceService();
+  const { activeGeofences, currentZone, isGeofencingActive, startGeofencing } = useGeofenceService();
   const { unseenCount, refreshFriendships } = useFriendships();
   const [isOpenToWave, setIsOpenToWave] = useState(false);
   const [nearbyActivities, setNearbyActivities] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+
+  // Location / permission awareness for zone card
+  // 'checking' | 'location_off' | 'permission_missing' | 'detecting' | 'confirmed'
+  const [zoneCardState, setZoneCardState] = useState('checking');
+
+  // Fetch current user's avatar
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('profiles')
+      .select('avatar_url')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+      });
+  }, [user?.id]);
+
+  // Check location services + permissions; drive zone card display state
+  const checkZoneCardState = useCallback(async () => {
+    try {
+      const servicesOn = await Location.hasServicesEnabledAsync();
+      if (!servicesOn) { setZoneCardState('location_off'); return; }
+      const [fg, bg] = await Promise.all([
+        Location.getForegroundPermissionsAsync(),
+        Location.getBackgroundPermissionsAsync(),
+      ]);
+      if (fg.status !== 'granted' || bg.status !== 'granted') {
+        setZoneCardState('permission_missing');
+        return;
+      }
+      // Services on & perms granted — actual zone determined by geofence hook
+      setZoneCardState('detecting');
+    } catch (err) {
+      console.warn('[Home] zoneCardState check failed:', err.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkZoneCardState();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') checkZoneCardState();
+    });
+    return () => sub.remove();
+  }, [checkZoneCardState]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    let isActive = true;
+    const showLocationIntro = async () => {
+      const promptKey = `location_intro_shown_${user.id}`;
+
+      try {
+        if (await AsyncStorage.getItem(promptKey)) return;
+        await AsyncStorage.setItem(promptKey, 'true');
+
+        const [servicesEnabled, foreground, background] = await Promise.all([
+          Location.hasServicesEnabledAsync(),
+          Location.getForegroundPermissionsAsync(),
+          Location.getBackgroundPermissionsAsync(),
+        ]);
+
+        if (!isActive || (servicesEnabled && foreground.status === 'granted' && background.status === 'granted')) return;
+
+        Alert.alert(
+          'Make room for nearby reunions',
+          'Connecti uses location to recognize when you are near a Connecti Zone and help make reconnections possible. We do not save your precise coordinates to your account. You can change location access any time.',
+          [
+            { text: 'Maybe later', style: 'cancel' },
+            { text: 'Enable location', onPress: () => router.push('/home/SettingsScreen') },
+          ]
+        );
+      } catch (error) {
+        console.warn('[Home] Could not check location onboarding:', error.message);
+      }
+    };
+
+    showLocationIntro();
+    return () => { isActive = false; };
+  }, [router, user?.id]);
 
   const fetchWaveStatus = useCallback(async () => {
     if (!user?.id) return;
@@ -59,7 +145,7 @@ export default function HomeScreen() {
     if (!user?.id) return;
     try {
       const sessions = await fetchMyReconnections();
-      const sessionActivities = sessions.map(session => ({ id: session.id, sessionId: session.id, title: ['SHOWN_HINTS'].includes(session.phase) ? 'Someone you might know' : session.phase === 'RECONNECTED' ? 'You found each other' : 'Reveal is waiting for both of you', description: ['SHOWN_HINTS'].includes(session.phase) ? 'A mutual Wave matched you in this Connecti Zone.' : session.phase === 'RECONNECTED' ? 'Your connection is ready to chat.' : 'Continue without revealing identity yet.', icon: session.phase === 'RECONNECTED' ? 'sparkles-outline' : 'person-outline', color: session.phase === 'RECONNECTED' ? '#BE123C' : '#0F766E', avatarColor: session.phase === 'RECONNECTED' ? '#FFE4E6' : '#DDF4EE', type: 'session', phase: session.phase, createdAt: session.phase_updated_at }))
+      const sessionActivities = sessions.map(session => ({ id: session.id, sessionId: session.id, title: ['SHOWN_HINTS'].includes(session.phase) ? 'Someone you might know' : session.phase === 'RECONNECTED' ? 'You found each other' : 'Reveal is waiting for both of you', description: ['SHOWN_HINTS'].includes(session.phase) ? 'A mutual Wave matched you in this Connecti Zone.' : session.phase === 'RECONNECTED' ? 'Your connection is ready to chat.' : 'Waiting for the other person to reveal.', icon: session.phase === 'RECONNECTED' ? 'sparkles-outline' : 'person-outline', color: session.phase === 'RECONNECTED' ? '#7C3AED' : '#6366F1', avatarColor: session.phase === 'RECONNECTED' ? '#F5F3FF' : '#EEF2FF', type: 'session', phase: session.phase, createdAt: session.phase_updated_at }))
         .filter(session => ['SHOWN_HINTS', 'BOTH_REVEALS_PENDING', 'RECONNECTED'].includes(session.phase));
       setNearbyActivities(sessionActivities);
     } catch (error) {
@@ -91,25 +177,72 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const runChecks = async () => {
+        try {
+          await checkZoneCardState();
+          if (!isGeofencingActive) {
+            const [fg, bg, services] = await Promise.all([
+              Location.getForegroundPermissionsAsync(),
+              Location.getBackgroundPermissionsAsync(),
+              Location.hasServicesEnabledAsync()
+            ]);
+            if (services && fg.status === 'granted' && bg.status === 'granted') {
+              await startGeofencing();
+            }
+          }
+        } catch (e) {
+          console.warn('[Home] Focus check failed:', e.message);
+        }
+      };
+
       fetchWaveStatus();
       fetchNearbyActivities();
-    }, [fetchWaveStatus, fetchNearbyActivities])
+      runChecks();
+    }, [fetchWaveStatus, fetchNearbyActivities, checkZoneCardState, isGeofencingActive, startGeofencing])
   );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([
+      await checkZoneCardState();
+      
+      const refreshTasks = [
         fetchWaveStatus(),
         fetchNearbyActivities(),
         refreshFriendships(false),
-      ]);
+      ];
+
+      // If geofencing was stopped due to location off, restart it on pull-to-refresh if re-enabled
+      if (!isGeofencingActive) {
+        const [fg, bg, services] = await Promise.all([
+          Location.getForegroundPermissionsAsync(),
+          Location.getBackgroundPermissionsAsync(),
+          Location.hasServicesEnabledAsync()
+        ]);
+        if (services && fg.status === 'granted' && bg.status === 'granted') {
+          refreshTasks.push(startGeofencing());
+        }
+      }
+
+      await Promise.all(refreshTasks);
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchNearbyActivities, fetchWaveStatus, refreshFriendships]);
+  }, [fetchNearbyActivities, fetchWaveStatus, refreshFriendships, checkZoneCardState, isGeofencingActive, startGeofencing]);
 
-  const currentHub = (typeof currentZone === 'string' ? currentZone : currentZone?.name) || (activeGeofences && activeGeofences.length > 0 ? activeGeofences[0].name : null);
+  const currentHub = (typeof currentZone === 'string' ? currentZone : currentZone?.name) || null;
+
+  // Derive final zone card state: if geofence hook says we're in a zone, override 'detecting'
+  // But always prioritize OS settings off/missing over stale zone states
+  const resolvedZoneState = zoneCardState === 'location_off'
+    ? 'location_off'
+    : zoneCardState === 'permission_missing'
+    ? 'permission_missing'
+    : currentHub
+    ? 'confirmed'
+    : (zoneCardState === 'detecting' && isGeofencingActive)
+    ? 'no_zone'
+    : 'detecting';
 
   const handleWaveButtonPress = () => {
     if (isOpenToWave) {
@@ -152,7 +285,6 @@ export default function HomeScreen() {
               const result = await WaveService.setOpenToWave(user.id, currentHub);
               if (result) {
                 setIsOpenToWave(true);
-                router.push('/home/WavesScreen');
               } else {
                 Alert.alert(
                   "Wave Failed",
@@ -180,9 +312,17 @@ export default function HomeScreen() {
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <View style={styles.avatarContainer}>
-            <Ionicons name="person" size={20} color="#E5E7EB" />
-          </View>
+          <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/home/ProfileScreen')} activeOpacity={0.8}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitial}>
+                  {(user?.user_metadata?.first_name || 'A').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <View>
             <Text style={styles.greetingTitle}>Hi, {user?.user_metadata?.first_name || 'Aditya'}</Text>
             <Text style={styles.greetingSubtitle}>Ready to connect?</Text>
@@ -216,18 +356,89 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      <View style={styles.hubSelector}>
-        <View style={styles.hubLeft}>
-          <View style={styles.hubIconContainer}>
-            <Ionicons name="location-outline" size={20} color="#6366F1" />
+      {/* ── Zone Card ─────────────────────────────────────────────────────── */}
+      {resolvedZoneState === 'location_off' && (
+        <TouchableOpacity
+          style={[styles.hubSelector, styles.hubSelectorWarning]}
+          activeOpacity={0.8}
+          onPress={() => router.push('/home/SettingsScreen')}
+        >
+          <View style={styles.hubLeft}>
+            <View style={[styles.hubIconContainer, { backgroundColor: '#FEF2F2' }]}>
+              <Ionicons name="location-outline" size={20} color="#EF4444" />
+            </View>
+            <View>
+              <Text style={styles.hubLabel}>Device location is off</Text>
+              <Text style={[styles.hubName, { color: '#EF4444' }]}>Enable in Settings</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.hubLabel}>Current Connecti Zone</Text>
-            <Text style={styles.hubName}>{currentHub}</Text>
+          <Ionicons name="chevron-forward" size={18} color="#EF4444" />
+        </TouchableOpacity>
+      )}
+
+      {resolvedZoneState === 'permission_missing' && (
+        <TouchableOpacity
+          style={[styles.hubSelector, styles.hubSelectorWarning]}
+          activeOpacity={0.8}
+          onPress={() => router.push('/home/SettingsScreen')}
+        >
+          <View style={styles.hubLeft}>
+            <View style={[styles.hubIconContainer, { backgroundColor: '#FFFBEB' }]}>
+              <Ionicons name="alert-circle-outline" size={20} color="#F59E0B" />
+            </View>
+            <View>
+              <Text style={styles.hubLabel}>Location permission needed</Text>
+              <Text style={[styles.hubName, { color: '#F59E0B' }]}>Tap to enable in Settings</Text>
+            </View>
           </View>
+          <Ionicons name="chevron-forward" size={18} color="#F59E0B" />
+        </TouchableOpacity>
+      )}
+
+      {resolvedZoneState === 'detecting' && (
+        <View style={styles.hubSelector}>
+          <View style={styles.hubLeft}>
+            <View style={styles.hubIconContainer}>
+              <Ionicons name="radio-outline" size={20} color="#6366F1" />
+            </View>
+            <View>
+              <Text style={styles.hubLabel}>Current Connecti Zone</Text>
+              <Text style={[styles.hubName, { color: '#6B7280' }]}>Detecting nearby zones…</Text>
+            </View>
+          </View>
+          <Ionicons name="ellipsis-horizontal" size={20} color="#9CA3AF" />
         </View>
-        <Ionicons name="checkmark-circle-outline" size={20} color="#10B981" />
-      </View>
+      )}
+
+      {resolvedZoneState === 'no_zone' && (
+        <View style={styles.hubSelector}>
+          <View style={styles.hubLeft}>
+            <View style={styles.hubIconContainer}>
+              <Ionicons name="search-outline" size={20} color="#6366F1" />
+            </View>
+            <View>
+              <Text style={styles.hubLabel}>Current Connecti Zone</Text>
+              <Text style={[styles.hubName, { color: '#6B7280' }]}>No zones nearby</Text>
+            </View>
+          </View>
+          <Ionicons name="ellipse-outline" size={20} color="#9CA3AF" />
+        </View>
+      )}
+
+      {resolvedZoneState === 'confirmed' && (
+        <View style={styles.hubSelector}>
+          <View style={styles.hubLeft}>
+            <View style={styles.hubIconContainer}>
+              <Ionicons name="location-outline" size={20} color="#6366F1" />
+            </View>
+            <View>
+              <Text style={styles.hubLabel}>Current Connecti Zone</Text>
+              <Text style={styles.hubName}>{currentHub}</Text>
+            </View>
+          </View>
+          <Ionicons name="checkmark-circle-outline" size={20} color="#10B981" />
+        </View>
+      )}
 
       <View style={styles.waveSection}>
         <TouchableOpacity 
@@ -261,7 +472,7 @@ export default function HomeScreen() {
               <View style={styles.activityContent}>
                 <Text style={styles.activityCardTitle}>{activity.title}</Text>
                 <Text style={styles.activityCardDesc}>{activity.description}</Text>
-                {['SHOWN_HINTS'].includes(activity.phase) ? (
+                {['SHOWN_HINTS', 'BOTH_REVEALS_PENDING'].includes(activity.phase) ? (
                   <View style={styles.activityActions}>
                     <TouchableOpacity
                       style={styles.showHintButton}
@@ -320,9 +531,28 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    overflow: 'hidden',
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  avatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitial: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#5C7CFA',
   },
   greetingTitle: {
     fontSize: 16,
@@ -407,7 +637,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   showHintButton: {
-    backgroundColor: '#0F766E',
+    backgroundColor: '#6366F1',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -436,6 +666,10 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     borderWidth: 1,
     borderColor: '#F3F4F6',
+  },
+  hubSelectorWarning: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
   },
   hubLeft: {
     flexDirection: 'row',

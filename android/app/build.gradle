@@ -85,7 +85,14 @@ android {
     ndkVersion rootProject.ext.ndkVersion
 
     buildToolsVersion rootProject.ext.buildToolsVersion
-    compileSdk rootProject.ext.compileSdkVersion
+    compileSdk 36
+
+    // Shorten cmake build paths to avoid Windows MAX_PATH (260 char) limit
+    externalNativeBuild {
+        cmake {
+            buildStagingDirectory "C:/tmp/rnbuild"
+        }
+    }
 
     namespace 'com.aditya.connectiapp'
     defaultConfig {
@@ -129,14 +136,6 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
-    }
-
-    // ✅ FIX: Shorten CMake intermediate build path to avoid Windows 260-char limit
-    // react-native-keyboard-controller generates extremely long C++ file paths
-    externalNativeBuild {
-        cmake {
-            buildStagingDirectory file("C:/tmp/rnbuild")
-        }
     }
 }
 
@@ -187,9 +186,6 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-
-    implementation "androidx.work:work-runtime-ktx:2.9.0"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3"
 }
 
 apply plugin: 'com.google.gms.google-services'

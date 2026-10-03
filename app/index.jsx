@@ -42,7 +42,7 @@ function Index() {
 
               if (pendingRedir.matchId) {
                 router.replace({
-                  pathname: "/home/HintScreen",
+                  pathname: "/home/ShowHintScreen",
                   params: { matchId: pendingRedir.matchId }
                 });
                 return;

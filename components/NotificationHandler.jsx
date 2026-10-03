@@ -246,7 +246,7 @@ export default function NotificationHandler() {
             if (data?.sessionId) {
               router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId, interactionId: matchId } });
             } else if (matchId) {
-              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              router.push({ pathname: '/home/ShowHintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
             }
@@ -262,7 +262,7 @@ export default function NotificationHandler() {
             if (data?.sessionId) {
               router.push({ pathname: '/home/ShowHintScreen', params: { sessionId: data.sessionId, interactionId: matchId } });
             } else if (matchId) {
-              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              router.push({ pathname: '/home/ShowHintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
             }
@@ -296,7 +296,7 @@ export default function NotificationHandler() {
             if (partnerId) {
               router.push({ pathname: '/home/ChatConversationScreen', params: { friendId: partnerId } });
             } else if (matchId) {
-              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              router.push({ pathname: '/home/ShowHintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
             }
@@ -324,7 +324,7 @@ export default function NotificationHandler() {
             if (data?.sessionId) {
               router.push({ pathname: '/home/RevealedScreen', params: { sessionId: data.sessionId } });
             } else if (matchId) {
-              router.push({ pathname: '/home/HintScreen', params: { matchId } });
+              router.push({ pathname: '/home/ShowHintScreen', params: { matchId } });
             } else {
               router.replace('/home/HomeScreen');
             }
@@ -367,6 +367,16 @@ export default function NotificationHandler() {
               router.replace('/home/FriendRequestsScreen');
               return;
             }
+            if (data?.type === 'chat_message') {
+              router.push({
+                pathname: '/home/ChatConversationScreen',
+                params: {
+                  friendId: data?.senderId,
+                  friendName: data?.senderName || 'Unknown',
+                }
+              });
+              return;
+            }
             // Route any hint/reveal/skipped notification to HintScreen
             const hintTypes = ['WAVE_HINT', 'reveal', 'skipped'];
             if (data?.sessionId && data?.type === 'MATCH_REVEALED') {
@@ -383,19 +393,10 @@ export default function NotificationHandler() {
       });
       } // <-- CLOSED if (!listenersRegistered) guard
 
-      // Check if chat notifications are enabled
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('chat_notifications_enabled')
-        .eq('id', user.id)
-        .single();
-
-      if (profile?.chat_notifications_enabled) {
-        console.log('🔔 Chat notifications enabled, getting FCM token...');
-        await enableChatNotifications();
-      } else {
-        console.log('🔕 Chat notifications disabled in settings');
-      }
+      // ✅ Always register push token — regardless of chat_notifications_enabled.
+      // This ensures killed-state push notifications work on first launch.
+      console.log('🔔 Registering push token...');
+      await enableChatNotifications();
 
     } catch (error) {
       console.log('⚠️ Setup warning:', error.message);
@@ -423,6 +424,16 @@ export default function NotificationHandler() {
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#6366F1',
           sound: 'default',
+        });
+
+        // ✅ Chat messages channel — CRITICAL for killed-state push delivery
+        await Notifications.setNotificationChannelAsync('chat-messages', {
+          name: 'Chat Messages',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 150, 100, 150],
+          lightColor: '#5C7CFA',
+          sound: 'default',
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
         });
 
         console.log('✅ Notification channels configured');

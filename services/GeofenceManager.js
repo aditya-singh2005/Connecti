@@ -357,17 +357,16 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
         return;
       }
 
-      // ✅ TESTING MODE: Disabled ONE-SHOT CHECK to allow re-notifications
-      // const notifiedStr = await AsyncStorage.getItem(NOTIFIED_ZONES_KEY);
-      // let notifiedList = notifiedStr ? JSON.parse(notifiedStr) : [];
-      // if (notifiedList.includes(zoneName)) {
-      //   console.log(`[BG] ⏳ Already prompted for ${zoneName} once, skipping.`);
-      //   return;
-      // }
+      // ✅ 30-MINUTE COOLDOWN PER ZONE: Prevent spamming notifications for the same zone
+      const zoneCooldownKey = `zone_cooldown_${zoneName}`;
+      const zoneLastNotified = await AsyncStorage.getItem(zoneCooldownKey);
+      if (zoneLastNotified && (nowMs - parseInt(zoneLastNotified, 10) < 30 * 60 * 1000)) {
+        console.log(`[BG] ⏳ Cooldown active for ${zoneName} (within 30m), skipping notification.`);
+        return;
+      }
 
-      // Add to notified list before sending (DISABLED FOR TESTING)
-      // notifiedList.push(zoneName);
-      // await AsyncStorage.setItem(NOTIFIED_ZONES_KEY, JSON.stringify(notifiedList));
+      // Update the cooldown timestamp for this zone
+      await AsyncStorage.setItem(zoneCooldownKey, nowMs.toString());
 
       const eventData = {
         type: 'enter',
@@ -402,14 +401,14 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error, executionInfo }
       await AsyncStorage.setItem('last_notified_zone', zoneName);
 
       // ✅ SECONDARY VERIFICATION: Does the triggering location actually match the zone?
-      // Geofencing events include 'location' property
-      if (location?.coords) {
-        const { latitude: userLat, longitude: userLng } = location.coords;
+      // Geofencing events include 'region' property which triggered the event
+      if (region) {
+        const { latitude: userLat, longitude: userLng } = region;
         // Find zone in local data or just trust the radius we usually use (120-500m)
         // For industrial accuracy, we should check against the original zone radius.
         // We'll use a conservative 600m check if we can't find the specific zone radius here.
         // But better yet, we can trust the OS triggered it and just add a small buffer check.
-        console.log(`[BG] 📏 Verifying triggering location: ${userLat}, ${userLng}`);
+        console.log(`[BG] 📏 Verifying triggering region: ${userLat}, ${userLng}`);
         // (Simplified dist check since we don't have the zone list here. 
         //  The Native side already does a strict check, this is a JS-level safety.)
       }

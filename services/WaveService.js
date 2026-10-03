@@ -85,8 +85,6 @@ export class WaveService {
                 p_fcm_token: fcmToken || null,
                 p_expo_push_token: expoToken || null,
                 p_execution_state: executionState,
-                p_latitude: location?.latitude ?? null,
-                p_longitude: location?.longitude ?? null,
             });
 
             if (rpcError) {

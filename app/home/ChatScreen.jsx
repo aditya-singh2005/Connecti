@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from '@react-navigation/native';
@@ -208,7 +209,12 @@ export default function ChatScreen() {
     if (chat.isFriend || chat.is_friend) {
       router.push({
         pathname: '/home/ChatConversationScreen',
-        params: { friendId: chat.id, friendName: chat.name || 'Unknown', friendContact: chat.contact || '' }
+        params: { 
+          friendId: chat.id, 
+          friendName: chat.name || 'Unknown', 
+          friendContact: chat.contact || '',
+          connectionId: chat.connectionId || ''
+        }
       });
     }
   };
@@ -290,9 +296,15 @@ export default function ChatScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.avatarContainer}>
-                <View style={[styles.avatar, chat.unreadCount > 0 && styles.avatarUnread]}>
-                  <Text style={styles.avatarText}>{getInitial(chat.name)}</Text>
-                </View>
+                {chat.avatarUrl ? (
+                  <Image source={{ uri: chat.avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <View style={[styles.avatar, chat.unreadCount > 0 && styles.avatarUnread]}>
+                    <Text style={[styles.avatarText, chat.unreadCount > 0 && styles.avatarTextUnread]}>
+                      {getInitial(chat.name)}
+                    </Text>
+                  </View>
+                )}
                 {chat.unreadCount > 0 && <View style={styles.unreadDot} />}
               </View>
               <View style={styles.chatInfo}>
@@ -395,8 +407,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  avatarImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
   avatarUnread: { backgroundColor: '#5C7CFA' },
   avatarText: { fontSize: 20, fontWeight: '700', color: '#5C7CFA' },
+  avatarTextUnread: { color: '#FFFFFF' },
   unreadDot: {
     position: 'absolute', bottom: 0, right: 0,
     width: 12, height: 12, borderRadius: 6,

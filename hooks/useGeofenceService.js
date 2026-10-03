@@ -90,6 +90,7 @@ export function useGeofenceService() {
     console.log('🚀 useGeofenceService - Initializing');
 
     const init = async () => {
+      await AsyncStorage.removeItem('last_location');
       await setupGeofenceNotificationChannels();
       await setupFCMToken();
 
@@ -102,13 +103,20 @@ export function useGeofenceService() {
       //   await syncNativeEvents();
       // }
 
-      // 🧹 SESSION CLEANUP: If app loads after a long time, wipe notified zones and active zone
+      // 🧹 SESSION CLEANUP & ACCESS VERIFICATION
+      const [servicesEnabled, fgPerm, bgPerm] = await Promise.all([
+        Location.hasServicesEnabledAsync(),
+        Location.getForegroundPermissionsAsync(),
+        Location.getBackgroundPermissionsAsync()
+      ]);
+      const hasFullAccess = servicesEnabled && fgPerm.status === 'granted' && bgPerm.status === 'granted';
+
       const lastActive = await AsyncStorage.getItem(SESSION_LAST_ACTIVE_KEY);
       const now = Date.now();
       const STALE_THRESHOLD = 30 * 60 * 1000; // ✅ PRODUCTION: 30 mins
 
-      if (lastActive && (now - parseInt(lastActive) > STALE_THRESHOLD)) {
-        console.log('🧹 Stale session found. Wiping notified zones and current zone.');
+      if (!hasFullAccess || (lastActive && (now - parseInt(lastActive) > STALE_THRESHOLD))) {
+        console.log('🧹 Stale session or missing location access. Wiping notified zones and current zone.');
         await AsyncStorage.removeItem(NOTIFIED_ZONES_KEY);
         await AsyncStorage.removeItem(CURRENT_ZONE_KEY);
         await AsyncStorage.removeItem('wave_timer_expiry'); // WAVE_TIMER_KEY from WaveService
@@ -127,9 +135,7 @@ export function useGeofenceService() {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              const lastLocJson = await AsyncStorage.getItem('last_location');
-              const lastLoc = lastLocJson ? JSON.parse(lastLocJson) : null;
-              await WaveService.syncUserZone(user.id, zone, lastLoc);
+              await WaveService.syncUserZone(user.id, zone);
             }
           } catch (syncError) {
             console.warn('[useGeofence] Initial sync failed:', syncError.message);
@@ -272,9 +278,7 @@ export function useGeofenceService() {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
             console.log(`💓 Heartbeat: Refreshing presence for ${currentZoneRef.current}`);
-            const lastLocJson = await AsyncStorage.getItem('last_location');
-            const lastLoc = lastLocJson ? JSON.parse(lastLocJson) : null;
-            await WaveService.syncUserZone(user.id, currentZoneRef.current, lastLoc);
+            await WaveService.syncUserZone(user.id, currentZoneRef.current);
           }
         } catch (e) {
           console.warn('💓 Heartbeat failed:', e.message);
@@ -327,7 +331,7 @@ export function useGeofenceService() {
 
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
+          accuracy: Location.Accuracy.Balanced,
           distanceInterval: 5, // ✅ CHANGED: Every 5 meters for better detection
           timeInterval: 2000, // ✅ CHANGED: Every 2 seconds
         },
@@ -340,7 +344,6 @@ export function useGeofenceService() {
           };
 
           setCurrentLocation(newLocation);
-          await AsyncStorage.setItem('last_location', JSON.stringify(newLocation));
 
           // ✅ 1. Check against CURRENT KNOWN zones immediately (Fastest feedback)
           await checkZoneEntry(newLocation);
@@ -354,7 +357,6 @@ export function useGeofenceService() {
           }
         }
       );
-
       console.log('✅ Location monitoring active (every 2s or 5m)');
     } catch (error) {
       console.log('⚠️ Failed to start monitoring:', error.message);
@@ -859,8 +861,16 @@ export function useGeofenceService() {
       await persistRuntimeState('active');
       console.log('📱 App became active');
 
-      if (false) {
-        // await syncNativeEvents();
+      // ✅ Wipe current zone if location services or permissions are disabled
+      const [servicesEnabled, fgPerm, bgPerm] = await Promise.all([
+        Location.hasServicesEnabledAsync(),
+        Location.getForegroundPermissionsAsync(),
+        Location.getBackgroundPermissionsAsync()
+      ]);
+      if (!servicesEnabled || fgPerm.status !== 'granted' || bgPerm.status !== 'granted') {
+        console.log('🧹 Location off or permissions missing on resume. Wiping current zone.');
+        await AsyncStorage.removeItem(CURRENT_ZONE_KEY);
+        setCurrentZone(null);
       }
 
       await loadRecentEvents();
@@ -900,8 +910,14 @@ export function useGeofenceService() {
 
   async function updateCurrentLocation() {
     try {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        console.log('⚠️ Location services disabled. Skipping location fetch.');
+        return null;
+      }
+
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
+        accuracy: Location.Accuracy.Balanced,
         timeout: 5000,
       });
 
@@ -913,7 +929,6 @@ export function useGeofenceService() {
       };
 
       setCurrentLocation(newLocation);
-      await AsyncStorage.setItem('last_location', JSON.stringify(newLocation));
 
       return newLocation;
     } catch (error) {
@@ -1020,7 +1035,26 @@ export function useGeofenceService() {
       );
 
       if (nearbyZones.length === 0) {
-        throw new Error('No zones found within 10km radius');
+        console.log('⚠️ No zones found within 10km radius. Geofencing active but empty.');
+        
+        const now = new Date().toISOString();
+        await AsyncStorage.setItem(GEOFENCE_CONFIG_KEY, JSON.stringify({
+          geofences: [],
+          location: userLocation,
+          startedAt: now,
+          nativeSupport: false,
+          version: '0.0.0-empty',
+        }));
+        await AsyncStorage.setItem('active_geofences', JSON.stringify([]));
+        await AsyncStorage.setItem('last_update', now);
+        
+        setIsGeofencingActive(true);
+        setActiveGeofences([]);
+        setLastUpdate(now);
+        lastZoneCheckLocation.current = userLocation;
+        await startLocationMonitoring();
+        
+        return { success: true, zonesCount: 0, zones: [], location: userLocation, nativeSupport: false };
       }
 
       console.log(`✅ Found ${nearbyZones.length} zones`);
@@ -1193,8 +1227,15 @@ export function useGeofenceService() {
       };
 
     } catch (error) {
-      console.error('❌ Failed to start geofencing:', error);
-      Alert.alert('Error', error.message);
+      if (error.message === 'Could not get current location') {
+        console.log('⚠️ Geofencing skipped: Location unavailable');
+      } else {
+        console.error('❌ Failed to start geofencing:', error);
+        // Only show alert for critical errors, not just skipping if no zones
+        if (error.message !== 'No zones found within 10km radius') {
+          Alert.alert('Geofencing Error', error.message);
+        }
+      }
       return { success: false, error: error.message };
     } finally {
       setLoading(false);

@@ -220,7 +220,7 @@ export default function BLETestScreen() {
 
       // Check permissions
       if (!hardwareStatus.bluetoothPermission || !hardwareStatus.locationPermission) {
-        router.push('/home/PermissionsScreen');
+        router.push('/home/SettingsScreen');
         return;
       }
 

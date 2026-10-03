@@ -69,7 +69,7 @@ function useConnectionsState() {
 
         const { data: partnerProfiles, error: profileError } = await supabase
           .from('profiles')
-          .select('id, name, contact, username, city, country')
+          .select('id, name, contact, username, city, country, avatar_url')
           .in('id', partnerIds);
 
         if (profileError) console.error('Error fetching partner profiles:', profileError);
@@ -85,6 +85,7 @@ function useConnectionsState() {
             username: profile?.username || '',
             city: profile?.city || '',
             country: profile?.country || '',
+            avatarUrl: profile?.avatar_url || null,
             connectedAt: c.created_at,
           };
         }).filter(c => c.id); // remove any that had no profile
@@ -104,7 +105,7 @@ function useConnectionsState() {
         const senderIds = pendingData.map(i => i.sender_id);
         const { data: senderProfiles } = await supabase
           .from('profiles')
-          .select('id, name, contact, username')
+          .select('id, name, contact, username, avatar_url')
           .in('id', senderIds);
 
         formattedPending = pendingData.map(i => {

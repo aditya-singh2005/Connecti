@@ -7,7 +7,7 @@ export async function fetchMyReconnections() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data, error } = await supabase.from('interactions')
-    .select('id,sender_id,receiver_id,phase,hint_payload,zone_id,created_at,phase_updated_at,reconnect_started_at')
+    .select('id,sender_id,receiver_id,phase,hint_payload,zone_id,created_at,phase_updated_at,reconnect_started_at,sender_revealed,receiver_revealed')
     .eq('interaction_type', 'mutual_discovery')
     .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
     .in('phase', ['SHOWN_HINTS', 'BOTH_REVEALS_PENDING', 'RECONNECTED'])

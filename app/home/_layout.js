@@ -4,11 +4,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useChatNotifications } from '../../hooks/useChatNotifications';
 import { useFriendships } from '../../hooks/useFriendships';
 import { supabase } from '../../lib/supabase';
 
 export default function HomeLayout() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const segments = useSegments();
   const { unseenCount, friends } = useFriendships();
@@ -173,12 +175,19 @@ export default function HomeLayout() {
             <Ionicons name="log-out-outline" size={24} color="#fff" />
           </TouchableOpacity>
         ),
-        tabBarActiveTintColor: '#1E88E5',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: '#5C7CFA',
+        tabBarInactiveTintColor: '#9CA3AF',
         tabBarStyle: {
           backgroundColor: 'white',
           borderTopWidth: 1,
           borderTopColor: '#e5e5e5',
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom + 4,
+          paddingTop: 4,
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
         },
       }}
     >
@@ -274,6 +283,15 @@ export default function HomeLayout() {
         }}
       />
 
+      {/* 🚫 HIDE EditProfileScreen from navbar */}
+      <Tabs.Screen
+        name="EditProfileScreen"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+
       {/* Hidden Screens - These won't appear in tab bar */}
       <Tabs.Screen
         name="FriendsListScreen"
@@ -306,14 +324,7 @@ export default function HomeLayout() {
         }}
       />
 
-      {/* 🚫 HIDE PermissionsScreen from navbar */}
-      <Tabs.Screen
-        name="PermissionsScreen"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
-      />
+
 
       {/* 🚫 HIDE BLETestScreen from navbar */}
       <Tabs.Screen
@@ -333,14 +344,7 @@ export default function HomeLayout() {
         }}
       />
 
-      {/* 🚫 HIDE HintScreen from navbar */}
-      <Tabs.Screen
-        name="HintScreen"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
-      />
+
 
       <Tabs.Screen
         name="ShowHintScreen"
